@@ -104,7 +104,8 @@ double Road::normalizeS(const double s) {
 vector<double> Road::getXY(const double s, const double d) {
     // Here we use the spline between S and X, and spline between S and Y to compute the normal, x and y
     // x = splineSX(S) + normal[0] * d
-    //  = splineSY(S) + normal[1] * d
+    // y = splineSY(S) + normal[1] * d
+    // It is more efficient than the original algorithm (593 VS 696 millies for 10 million operarions)
     int prev_wp = -1;
     double S = normalizeS(s);
     vector<double> norm = getNormalAtS(S);
@@ -119,6 +120,9 @@ vector<double> Road::getNormalAtS(double s) {
 }
 
 vector<double> Road::getDirectionAtS(double s) {
+    // Compute the normal using the first derivative of splineSX, and SplineSY
+    // It is bit slower than the original algrithm (344 vs 206 millies for 10 million operations)
+    // But seems be more accurate
     double S = normalizeS(s);
     double dx = splineSX.deriv(1, S);
     double dy = splineSY.deriv(1, S);
