@@ -169,6 +169,11 @@ public:
      * @param dy the y element of the vehicle' heading, must be a unit vector
      */ 
     std::vector<double>getFrenetDirection(double x, double y, double s, double d, double dx, double dy);
+
+    /**
+     * Compute distance between s1, and s2, account for circular road
+     */
+    double distanceS(const double s1, const double s2);
 };
 
 #endif

@@ -54,7 +54,10 @@ public:
   static double maxAcceleration;
   static double maxJerk;
   static double laneWidth;
-  static double minSafeDistance(const double speed);
+  static double minSafeDistance;
+  static double safeDistance(const double relativeSpeed);
+
+  static double maxDistance;
   static double minSafeGap;
 
   /**

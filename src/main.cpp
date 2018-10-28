@@ -126,7 +126,6 @@ int main()
               }
 
               if (navigator.isVehicleInitialized()) {
-                std::cout << "Update vehicle" << std::endl;
                 navigator.update(previous_path_x, previous_path_y);
               }
               else {
@@ -134,12 +133,13 @@ int main()
                 navigator.initializeVehicle(car_x, car_y, car_s, car_d, car_yaw, car_speed);
               }
 
-              std::cout << "Car: x: " << car_x << " y: " << car_y << " s: " << car_s << " d: " << car_d <<  " v: " << car_speed << " yaw: "  << car_yaw << std::endl;
+#ifdef DEBUG_OUT
+              std::cout << "Current: x: " << car_x << " y: " << car_y << " s: " << car_s << " d: " << car_d <<  " v: " << car_speed << " yaw: "  << car_yaw << std::endl;
               
-              cout <<  "Vehicle x: " << navigator.getVehicle()->x << " y: " << navigator.getVehicle()->y << " s: " << navigator.getVehicle()->s << " d: " << navigator.getVehicle()->d
+              cout <<  "Vehicle prediction start: x: " << navigator.getVehicle()->x << " y: " << navigator.getVehicle()->y << " s: " << navigator.getVehicle()->s << " d: " << navigator.getVehicle()->d
                    << " v: " << MpS2MpH(navigator.getVehicle()->v) << " vs: " << MpS2MpH(navigator.getVehicle()->vs) << " vd: " << MpS2MpH(navigator.getVehicle()->vd) << " a: " 
                    << MpS2MpH(navigator.getVehicle()->a)  << std::endl;
-              
+#endif
               std::vector<std::vector<double>> next_trjectory = navigator.generateTrajectory(fusion);
               
               json msgJson;

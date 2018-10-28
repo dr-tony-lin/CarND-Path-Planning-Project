@@ -4,7 +4,6 @@
 #include "Config.hpp"
 
 size_t Config::N = 50;
-
 double Config::dt = 0.02;
 size_t pastTrajectoryLength = (size_t) (1.0 / Config::dt);
 int Config::maxFitOrder = 4;
@@ -15,20 +14,25 @@ double Config::maxSteering = deg2rad(33.75);
 double Config::laneWidth = 4;
 
 /**
- * Distance that we can stop the car in 3 seconds with 60% of max brake with 1 meter error
+ * Distance that we can stop the car in 1 second with 60% of max brake with 1 meter error
  */
-double Config::minSafeDistance(const double relativeSpeed) {
+double Config::safeDistance(const double relativeSpeed) {
   if (relativeSpeed < 0) {
     return 1.0;
   }
-  return relativeSpeed * 3 - 0.5 * 0.6 * Config::maxAcceleration * 3 * 3 + 1;
+
+  return std::min(maxDistance, std::max(minSafeDistance, relativeSpeed - 0.5 * 0.8 * Config::maxAcceleration));
 }
 
+double Config::minSafeDistance = 1.0;
+double Config::maxDistance = 50.0;
 double Config::minSafeGap = 0.3;
 double Config::maxAcceleration = MpH2MpS(10);
-double Config::maxJerk = MpH2MpS(10);
+double Config::maxJerk = MpH2MpS(8);
 double Config::maxDeceleration = MpH2MpS(-20);
-double Config::maxSpeed = MpH2MpS(50);
+// The simulator use a different approach for the road trajectory than our spline approach
+// They will result in slight difference in speed calculation, we need some margin to accommodate the differences
+double Config::maxSpeed = MpH2MpS(47.5); 
 double Config::Lf = 2.67;
 double Config::steerAdjustmentThresh = 0.6;
 double Config::steerAdjustmentRatio = 0.025;

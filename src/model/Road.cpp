@@ -8,8 +8,26 @@ Road *Road::currentRoad;
 Road::Road(const std::vector<double> &s, const std::vector<double> &x, const std::vector<double> &y,
            const std::vector<double> &nx, const std::vector<double> &ny, const double maxs): 
                             road_s(s), road_x(x), road_y(y), road_nx(nx), road_ny(ny), maxS(maxs) {
-    splineSX.set_points(s, x);
-    splineSY.set_points(s, y);
+    vector<double> S;
+    vector<double> X;
+    vector<double> Y;
+    // Add the end point to the start for continuity
+    S.push_back(s[s.size() - 2] - s.back());
+    X.push_back(x.back());
+    Y.push_back(y.back());
+    // Add the waypoints
+    S.insert(S.end(), s.begin(), s.end());
+    X.insert(X.end(), x.begin(), x.end());
+    Y.insert(Y.end(), y.begin(), y.end());
+    // append the starting point for continuity
+    S.push_back(maxS);
+    X.push_back(x[0]);
+    Y.push_back(y[0]);
+    // S.push_back(s[1] + maxS);
+    // X.push_back(x[1]);
+    // Y.push_back(y[2]);
+    splineSX.set_points(S, X);
+    splineSY.set_points(S, Y);
 }
 
 unsigned int Road::ClosestWaypoint(const double x, const double y) {
@@ -98,7 +116,18 @@ double Road::normalizeS(const double s) {
     if (s > maxS) {
         return s - maxS;
     }
+    else if (s < 0) {
+        return s + maxS;
+    }
     return s;
+}
+double Road::distanceS(const double s1, const double s2) {
+    double distance = s1 - s2;
+    if (fabs(distance) > 0.5 * maxS) {
+        distance = distance > 0? distance - maxS: distance + maxS;
+    }
+
+    return distance;
 }
 
 vector<double> Road::getXY(const double s, const double d) {
@@ -113,6 +142,9 @@ vector<double> Road::getXY(const double s, const double d) {
 }
 
 vector<double> Road::getNormalAtS(double s) {
+    // Compute the normal using the first derivative of splineSX, and SplineSY
+    // It is bit slower than the original algrithm (344 vs 206 millies for 10 million operations)
+    // But seems be more accurate
     double S = normalizeS(s);
     double dx = splineSX.deriv(1, S);
     double dy = splineSY.deriv(1, S);
@@ -120,70 +152,13 @@ vector<double> Road::getNormalAtS(double s) {
 }
 
 vector<double> Road::getDirectionAtS(double s) {
-    // Compute the normal using the first derivative of splineSX, and SplineSY
-    // It is bit slower than the original algrithm (344 vs 206 millies for 10 million operations)
-    // But seems be more accurate
     double S = normalizeS(s);
     double dx = splineSX.deriv(1, S);
     double dy = splineSY.deriv(1, S);
     return unitv(dx, dy);
 }
-// vector<double> Road::getXY2(const double s, const double d) {
-//     double S = normalizeS(s);
-//     int prev_wp = -1;
-
-//     while (S > road_s[prev_wp + 1] && (prev_wp < (int) (road_s.size() - 1))) {
-//         prev_wp++;
-//     }
-
-//     int wp2 = (prev_wp + 1) % road_x.size();
-
-//     double sx = road_x[prev_wp]
-//         + (S - road_s[prev_wp]) * (road_x[wp2] - road_x[prev_wp]) / (road_s[wp2] - road_s[prev_wp]);
-//     double sy = road_y[prev_wp]
-//         + (S - road_s[prev_wp]) * (road_y[wp2] - road_y[prev_wp]) / (road_s[wp2] - road_s[prev_wp]);
-
-//     double dvx = (road_y[wp2] - road_y[prev_wp]);
-//     double dvy = (road_x[wp2] - road_x[prev_wp]);
-
-//     double dvl = length(dvx, dvy);
-
-//     dvx /= dvl;
-//     dvy /= dvl;
-
-//     if (d > 0) {
-//         dvy = -dvy;
-//     }
-//     else {
-//         dvx = -dvx;
-//     }
-
-//     double tmp = fabs(d);
-
-//     double x = sx + tmp * dvx;
-//     double y = sy + tmp * dvy;
-
-//     return {x, y};
-// }
-//vector<double> Road::getDirectionAtS(double s) {
-    // int i = 0;
-    // for (; i < (int) road_s.size(); i++) {
-    //     if (s >= road_s[i])
-    //         break;
-    // }
-
-    // if (i == (int) road_s.size() - 1) {
-    //     return {-road_ny[i], road_nx[i]};
-    // }
-
-    // double f = (s - road_s[i]) / (road_s[i+1] - road_s[i]);
-
-    // // Linear interpolation
-    // return unitv(-(road_ny[i] * f + road_ny[i+1] * (1 - f)), road_nx[i] * f + road_nx[i+1] * (1 - f));
-//}
 
 vector<double> Road::getFrenetDirection(double x, double y, double s, double d, double dx, double dy) {
-    int next_wp = NextWaypoint(x, y, dx, dy);
     vector<double> F = this->getFrenet(x + dx, y + dy, dx, dy);
     return unitv(F[0] - s, F[1] - d);
 }

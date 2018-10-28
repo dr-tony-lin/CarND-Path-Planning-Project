@@ -9,6 +9,18 @@ if (VERBOSE_OUT)
     add_definitions(-DVERBOSE_OUT=1)
 endif(VERBOSE_OUT)
 
+if (DEBUG_OUT)
+    add_definitions(-DDEBUG_OUT=1)
+endif(DEBUG_OUT)
+
+if (INFO_OUT)
+    add_definitions(-DINFO_OUT=1)
+endif(INFO_OUT)
+
+if (ERROR_OUT)
+    add_definitions(-DERROR_OUT=1)
+endif(ERROR_OUT)
+
 #set(CXX_FLAGS "-Wall")
 set(CXX_FLAGS "-W")
 set(CMAKE_CXX_FLAGS "${CXX_FLAGS}")

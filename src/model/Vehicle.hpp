@@ -38,7 +38,8 @@ public:
   double ad;
   double yaw;
   double width = 2;
-  int L = Config::Lf;
+  int Lf = Config::Lf;
+  int len = Config::Lf * 1.5;
   double maxAcceleration = Config::maxAcceleration;
 
   Vehicle() {};
@@ -63,24 +64,29 @@ public:
    */ 
   Vehicle(const Vehicle &another);
 
-  void initFrenet() {
-      vector<double> vf = Road::getCurrentRoad().getFrenetDirection(x, y, s, d, dx, dy);
-      vs = vf[0] * v;
-      vd = vf[1] * v;
-      as = vf[0] * a;
-      ad = vf[1] * a;
-  };
+  void initFrenet();
 
   /**
    * Set length of the vehicle between the front and back wheels
-   * @param length the length
+   * @param lf the length
    */ 
-  void setLength(double length) { this->L = length;}
+  void setLf(double lf) ;
 
   /**
    * Get length of the vehicle between the front and back wheels
    */  
-  double getLength() const { return L;}
+  double getLf() const { return Lf;}
+
+  /**
+   * Set length of the vehicle
+   * @param length the length
+   */ 
+  void setLength(double length) { this->len = length;}
+
+  /**
+   * Get length of the vehicle
+   */  
+  double getLength() const { return len;}
 
   /**
    * Get the x coordinate of the vehicle
@@ -109,9 +115,24 @@ public:
 
   /**
    * Return if another vehicle is too close this vehicle
-   * @param another
+   * @param my_s my future s coordinate
+   * @param my_d my future d
+   * @param my_v my future v
+   * @param another_s future s of another car
+   * @param another_d future d of another car
+   * @param another_v future v of another car
+   * @param another another car
    */
-  bool tooClose(const Vehicle &another);
+  bool tooClose(const double my_s, const double my_d, const double my_v, 
+                        const double another_s, const double another_d, const double another_v, const Vehicle &another);
+
+  /**
+   * Return if another vehicle is on the same lane as this vehicle
+   * @param my_d my future d
+   * @param another_d future d of another car
+   * @param another another car
+   */
+bool onSameLane(const double my_d, const double another_d, const Vehicle &another);
 
   /**
    * Get the s coordinate after t seconds
@@ -138,7 +159,7 @@ public:
    * Get the s coordinate after t seconds
    */ 
   double sAfter(const double s, const double vs, const double as, const double t) {
-    return s + vs*t + 0.5*as*t*t;
+    return Road::getCurrentRoad().normalizeS(s + vs*t + 0.5*as*t*t);
   }
 
   /**
@@ -184,8 +205,16 @@ public:
   void vehicleToGlobal(double &x, double &y) const;
 
   /**
+   * Detect collisions
+   * @param fusion the sensor fusion data of other vehicle in the same side of the road
+   * @param lane the target lane
+   * @param t the time in the future to predict
+   */ 
+  std::vector<Vehicle*> detectCollision(vector<Vehicle> &fusion, int lane, double t, double safeRange=5);
+
+  /**
    * Find the vehicle in front of the vehicle
-   * @param prediction the predictions of other vehicle in the same side of the road
+   * @param fusion the sensor fusion data of other vehicle in the same side of the road
    * @param lane the target lane
    * @param t the time in the future to predict
    */ 
@@ -193,7 +222,7 @@ public:
   
   /**
    * Find the vehicle in front of the vehicle
-   * @param prediction the predictions of other vehicle in the same side of the road
+   * @param fusion the sensor fusion data of other vehicle in the same side of the road
    * @param lane the target lane
    * @param t the time in the future to predict
    */ 
@@ -202,7 +231,7 @@ public:
 
   /**
    * Find the maximum acceleration to reach the maximum safe speed in the given time interval
-   * @param prediction the predictions of other vehicle in the same side of the road
+   * @param fusion the sensor fusion data of other vehicle in the same side of the road
    * @param lane the target lane
    * @param t the time horizon
    */
@@ -212,7 +241,7 @@ public:
 
   /**
    * Find the maximum acceleration to reach the maximum safe speed in the given time interval
-   * @param prediction the predictions of other vehicle in the same side of the road
+   * @param fusion the sensor fusion data of other vehicle in the same side of the road
    * @param lane the target lane
    * @param t the time horizon
    */
