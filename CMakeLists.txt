@@ -25,7 +25,8 @@ endif(ERROR_OUT)
 set(CXX_FLAGS "-W")
 set(CMAKE_CXX_FLAGS "${CXX_FLAGS}")
 
-set(sources src/main.cpp 
+set(sources src/main.cpp
+            src/control/Navigator
             src/utils/utils.cpp 
             src/utils/Config.cpp
             src/utils/spline.cpp

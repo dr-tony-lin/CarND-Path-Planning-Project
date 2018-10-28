@@ -1,26 +1,19 @@
 #ifndef _MODEL_VEHICLE_HPP_
 #define _MODEL_VEHICLE_HPP_
-#include <iostream>
-#include <random>
-#include <deque>
 #include <vector>
-#include <map>
-#include <string>
-#include "../utils/utils.h"
 #include "../utils/Config.hpp"
 #include "Road.hpp"
 
 using namespace std;
 
-enum LaneBehavior {
-    KL = 1,
-    LCL,
-    LCR,
-    PLCL,
-    PLCR
-};
+class Navigator;
 
+/**
+ * The Vehicle class encapsulate a vehicle
+ */ 
 class Vehicle {
+  double distanceToTarget;
+  friend class Navigator;
 public:
   double x;
   double y;
@@ -125,6 +118,10 @@ public:
    */
   bool tooClose(const double my_s, const double my_d, const double my_v, 
                         const double another_s, const double another_d, const double another_v, const Vehicle &another);
+  /**
+   * Check if the given vehicle has collision with the vehicle under control
+   */
+  bool hasCollision(Vehicle &another);
 
   /**
    * Return if another vehicle is on the same lane as this vehicle
@@ -205,49 +202,6 @@ bool onSameLane(const double my_d, const double another_d, const Vehicle &anothe
   void vehicleToGlobal(double &x, double &y) const;
 
   /**
-   * Detect collisions
-   * @param fusion the sensor fusion data of other vehicle in the same side of the road
-   * @param lane the target lane
-   * @param t the time in the future to predict
-   */ 
-  std::vector<Vehicle*> detectCollision(vector<Vehicle> &fusion, int lane, double t, double safeRange=5);
-
-  /**
-   * Find the vehicle in front of the vehicle
-   * @param fusion the sensor fusion data of other vehicle in the same side of the road
-   * @param lane the target lane
-   * @param t the time in the future to predict
-   */ 
-  Vehicle* getVehicleBehindAt(vector<Vehicle> &fusion, int lane, double t);
-  
-  /**
-   * Find the vehicle in front of the vehicle
-   * @param fusion the sensor fusion data of other vehicle in the same side of the road
-   * @param lane the target lane
-   * @param t the time in the future to predict
-   */ 
-  Vehicle* getVehicleAheadAt(vector<Vehicle> &fusion, int lane, double t);
-
-
-  /**
-   * Find the maximum acceleration to reach the maximum safe speed in the given time interval
-   * @param fusion the sensor fusion data of other vehicle in the same side of the road
-   * @param lane the target lane
-   * @param t the time horizon
-   */
-  double getMaxAcceleration(vector<Vehicle> &fusion, double t) {
-    return getMaxAcceleration(fusion, Road::getCurrentRoad().dToLane(d), t);
-  }
-
-  /**
-   * Find the maximum acceleration to reach the maximum safe speed in the given time interval
-   * @param fusion the sensor fusion data of other vehicle in the same side of the road
-   * @param lane the target lane
-   * @param t the time horizon
-   */
-  double getMaxAcceleration(vector<Vehicle> &fusion, int lane, double t);
-  
-  /**
    * Generate constant velocity (with respoect to s and d) trajectory
    * @param horizon the horizon step, each step is Config::dt duration
    */ 
@@ -265,41 +219,6 @@ bool onSameLane(const double my_d, const double another_d, const Vehicle &anothe
   * Destructor
   */
   virtual ~Vehicle() {};
-};
-
-class Navigator {
-protected:
-  Vehicle *vehicle = NULL;
-public:
-  std::deque<std::vector<double>> predictions;
-
-  Navigator() {};
-
-  /**
-   * Initialize the vehicle
-   * @param x x coordinate
-   * @param y y coordinate
-   * @param s the s coordinate in the map
-   * @param d the d coordinate in the map
-   * @param v the velocity of the vehicle
-   * @param yaw the yaw angle
-   * @param Lf length of the vehicle between the front and back wheels
-   * @param maxAccel max acceleration of the vehicle
-   */
-  void initializeVehicle(const double x, const double y, const double s, const double d, const double yaw, const double v = 0,
-                        const double LF=Config::Lf, const double maxAccel=Config::maxAcceleration);
-
-  bool isVehicleInitialized() { return vehicle != NULL;}
-
-  Vehicle *getVehicle() { return vehicle;};
-
-  void update(const std::vector<double>& previous_x, const std::vector<double>& previous_y);
-
-  std::vector<std::vector<double>> generateTrajectory(vector<Vehicle> &fusion, int laneShift=0);
-
-  virtual ~Navigator() {
-    delete vehicle;
-  }
 };
 
 #endif

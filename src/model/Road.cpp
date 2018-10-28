@@ -6,8 +6,8 @@ using namespace std;
 Road *Road::currentRoad;
 
 Road::Road(const std::vector<double> &s, const std::vector<double> &x, const std::vector<double> &y,
-           const std::vector<double> &nx, const std::vector<double> &ny, const double maxs): 
-                            road_s(s), road_x(x), road_y(y), road_nx(nx), road_ny(ny), maxS(maxs) {
+           const std::vector<double> &nx, const std::vector<double> &ny, const double maxs, const double _lanes): 
+                            road_s(s), road_x(x), road_y(y), road_nx(nx), road_ny(ny), maxS(maxs), lanes(_lanes) {
     vector<double> S;
     vector<double> X;
     vector<double> Y;

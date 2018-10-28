@@ -8,10 +8,7 @@
 
 class Config {
 public:
-  /**
-   * Past trajectory length
-   */
-  static size_t pastTrajectoryLength;
+  static int numberOfLanes;
 
   /**
    * The timesteps to predict
@@ -22,16 +19,6 @@ public:
    * The timestep in second
    */ 
   static double dt;
-
-  /**
-   * Control latency in millies
-   */ 
-  static long latency;
-
-  /**
-   * look ahead prediction time in seconds
-   */ 
-  static double lookahead;
   
   /**
    * The maximal polynomial fitting order
@@ -55,8 +42,10 @@ public:
   static double maxJerk;
   static double laneWidth;
   static double minSafeDistance;
+  static double minLaneChangeDistance;
   static double safeDistance(const double relativeSpeed);
-
+  static double safeLaneChangeDistance(const double relativeSpeed);
+  static double minLaneChangeTime;
   static double maxDistance;
   static double minSafeGap;
 
@@ -81,25 +70,9 @@ public:
   static double yawHigh;
 
   /**
-   * Steering angle adjustment threshold
-   */ 
-  static double steerAdjustmentThresh;
-
-  /**
-   * Steering angle adjustment ratio with respect to yaw change
-   */ 
-  static double steerAdjustmentRatio;
-
-  /**
    * Length from the front wheels to the center of the back wheels
    */ 
   static double Lf;
-
-  /**
-   * Cost weights: 0: cte, 1: epsi, 2: v, 3: delta, 4: delta delta, 5: not used,
-   * 6: a, 7: delta a, 8: large deceleration low velocity, 9: negative speed, 10: out of range epsi
-   */ 
-  static std::vector<double> weights;
 
   /**
    * Load configuration from file

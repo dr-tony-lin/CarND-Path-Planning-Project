@@ -24,6 +24,7 @@ private:
     double laneWidth = Config::laneWidth;
     double speedLimit = Config::maxSpeed;
     double maxS;
+    int lanes = Config::numberOfLanes;
 
 protected:
     /**
@@ -44,7 +45,7 @@ public:
      * @param nx the x component of the normal of the road pointing pointing to the left along the positive s direction
      */ 
     Road(const std::vector<double> &s, const std::vector<double> &x, const std::vector<double> &y,
-         const std::vector<double> &nx, const std::vector<double> &ny, const double maxS);
+         const std::vector<double> &nx, const std::vector<double> &ny, const double maxS, const double lanes=Config::numberOfLanes);
 
     /**
      * NOrmalize the S coordinate as the road is circular
@@ -65,6 +66,12 @@ public:
     static Road& getCurrentRoad() {
         return *currentRoad;
     }
+
+    /**
+     * Return the number of lanes the road has at s
+     * @param s the location
+     */ 
+    int getNumberOfLanes(const double s) { return lanes;};
 
     /**
      * Return the speed limit

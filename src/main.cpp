@@ -12,6 +12,7 @@
 #include "utils/utils.h"
 #include "model/Road.hpp"
 #include "model/Vehicle.hpp"
+#include "control/Navigator.hpp"
 
 // Don't use std namespace as it might cause g++ 7 to to use std::array for array in json.hpp, and fail
 // for convenience
