@@ -1,108 +1,174 @@
-# CarND-Controls-MPC
-Self-Driving Car Engineer Nanodegree Program
+# Path Planning Project
 
----
+## Content of the Submission and Usage
 
-## Dependencies
+This submission includes the following c++ files:
+* main.cpp: the main function that communicates with the simulator and drive the MPC process. It was modified from the original [CarND-Path-Planning-Propject](https://github.com/udacity/CarND-Path-Planning-Project)
+* control/Navigator.[hpp, cpp: The class containing the path planning control
+* control/Cost.[h, cpp]: Provide cost function implementation
+* model/Vehicle.[hpp, cpp]: a vehicle model class that encapsulates vehicle states and vechicle related utility functions 
+* model/Road.[hpp, cpp]: model road, and provide smooth mapping between map coordinate and Frenet coordinate
+* utils/Config.[hpp, cpp]: the Config class for providing hyper parameters from config.json file
+* utils/utils.[h, cpp]: utility functions
 
-* cmake >= 3.5
- * All OSes: [click here for installation instructions](https://cmake.org/install/)
-* make >= 4.1(mac, linux), 3.81(Windows)
-  * Linux: make is installed by default on most Linux distros
-  * Mac: [install Xcode command line tools to get make](https://developer.apple.com/xcode/features/)
-  * Windows: [Click here for installation instructions](http://gnuwin32.sourceforge.net/packages/make.htm)
-* gcc/g++ >= 5.4
-  * Linux: gcc / g++ is installed by default on most Linux distros
-  * Mac: same deal as make - [install Xcode command line tools]((https://developer.apple.com/xcode/features/)
-  * Windows: recommend using [MinGW](http://www.mingw.org/)
-* [uWebSockets](https://github.com/uWebSockets/uWebSockets)
-  * Run either `install-mac.sh` or `install-ubuntu.sh`.
-  * If you install from source, checkout to commit `e94b6e1`, i.e.
-    ```
-    git clone https://github.com/uWebSockets/uWebSockets
-    cd uWebSockets
-    git checkout e94b6e1
-    ```
-    Some function signatures have changed in v0.14.x. See [this PR](https://github.com/udacity/CarND-MPC-Project/pull/3) for more details.
+### Usage
 
-* **Ipopt and CppAD:** Please refer to [this document](https://github.com/udacity/CarND-MPC-Project/blob/master/install_Ipopt_CppAD.md) for installation instructions.
-* [Eigen](http://eigen.tuxfamily.org/index.php?title=Main_Page). This is already part of the repo so you shouldn't have to worry about it.
-* Simulator. You can download these from the [releases tab](https://github.com/udacity/self-driving-car-sim/releases).
-* Not a dependency but read the [DATA.md](./DATA.md) for a description of the data sent back from the simulator.
+The path planning executable can be launched with the following command:
+
+    ./path_planning
+
+The program will listen on port 4567 for an incoming simulator connection. Only one simulator should be connected at anytime, though the program does not prohibit it. To start a new simulator, terminate the existing one first, then start a new one.
+
+To start the simulator:
+
+#### On Windows
+
+    term3_sim.exe
+
+#### Other platforms:
+
+    ./term3_sim
+
+#### Build
+
+For Windows, Bash on Ubuntu on Windows should be used. Both gcc and clang can be used to build the program.
+
+To build the program, invoke the following commands on the bash terminal:
+```
+mkdir build
+cd build
+cmake ..
+make
+```
+
+The program can be built to output more different level of information for disgnosis purposes by defining **VERBOSE_OUT**, **DEBUG_OUT**, **INFO_OUT**, and **DEBUG_OUT** macros.
+
+#### Build API Documentation
+
+The documentation for functions, classes and methods are included in the header files in Doxygen format. To generate Api documentation with the included doxygen.cfg:
+
+1. Make sure doxygen is installed
+2. cd to the root folder of this project
+3. Issue the following command:
+
+    doxygen doxygen.cfg
+
+## The Implementation
+
+### The source code structure
+
+The src folder contains main.cpp, the following folders:
+
+* control: contains the Navigator class, and the Cost function classes
+* model: contains the Vehicle and Road models
+* utils: contains utility classes and functions, the json and spline utilities classes
+
+#### File names
+
+In this project, I made a class to have its own .hpp, and .cpp files. More specifically, a class source file contains exactly one class, and has the same name as the class it contains.
+
+#### The External folder
+
+The external folder contains Eigen.
+
+## Navigator class
+
+This class provides the overall path planning control. It's process is as follows:
+
+1. Before starting the navigation, initializeVehicle() should be called first to initialize the vehicle state.
+2. During each control loop, invoke the update() method to update the trajectory returned from the simulator
+3. Call the navigate() method to generate the next trajectory. THe Navigate method will perform the followings:
+    * Complete the current state transition if the end of transition has been reach
+    * Otherwise, get the states that can be transitted from the current state
+        * Find the best state by evaluating the available states' cost using the CostEvaluator class
+        * TRansit to the state
+    * Compute the next trajectory
+
+### The state
+States and state transitions are defined in the State, and StateTransition classes respectively. THe following states are used:
+
+* KL: keep lane
+* LCL: change to left
+* LCR: change to right
+* COLLIIDED: the vehicle has involved in a collision, the program will exit at this point
+
+Prepare lane change states are not used in this project as it is less important using a simulator.
+
+### The Cost Function
+
+The following cost functions (implemented as functor derived from Cost class) are used:
+
+* SafetyCost: this functor penalize unsafe situation where there is not enough space to change lane
+* SpeedCost: this functor penalize slow or fast approaching vehicle from behind
+* OffTargetLaneCost: this functor penalize distance to the target lane
+* ChangeLaneCost: this functor penalize lane change
+* LaneTrafficCost: this cost functor peanlize lanes that has heavier traffic, especially vehicle ahead of the vehicle
+
+These functors are encapsulated by CostEvaluator which is also itself a Cost functor. Also most of them use sigmoid as the underline cost function.
+
+### Determing Maximum Acceleration
+
+To minimize jerk, instead of controlling velocity directory, we compute the maximum permissible accelertion. The maximum acceleration is determined by using the following factors:
+
+1. Vehicles in the collision course at the event horizon. I do not check every time step alone the horizon, but this is probably yield better result. If there is no vehicle, the max acceleration is assumed.
+2. Otherwise, we compute the vehicle in front and at the back of the vehicle, and compute a suitable acceleration from their speed. It is possible that the vehicle behind might have a faster speed than the vehicle in front. This is left for the path planning to deal with (through the SafetyCost functor)
+
+### Trajectory Generation
+
+For smooth trajector generation, in stead of compute smooth curve using spline function for every trajectory, the following approach is used:
+
+#### Spline Curves For The Road Geometry
+
+1. The Road class will initialize two spline curves, one, SX, from the S coordinate to the X coordinate, and another, YS, from the S coordinate to the Y coordinate. Since the mapping from S to a map point is unique. This is also true for S to X, and S to Y. Having these two spline curved initialized when the Road class is initialized, we can obtain the X and Y coordinate of the waypoint given the S coordinate. 
+
+2. We perform trajectory computation and collision detection in the Frenet coordinate. The obtain the waypoint from the resulting S coordinate. The vehicle's trajectory can then be obtained by adding the X, Y coordinate with the value of the D coordinate multiple by the normal of the road. e.g:
+
+````
+    [X,Y] = [SX(S), SY(s)] + D * N(s)
+
+````
 
 
-## Basic Build Instructions
+3. For smooth land change, a spline curve is used. It has the following control points:
 
-1. Clone this repo.
-2. Make a build directory: `mkdir build && cd build`
-3. Compile: `cmake .. && make`
-4. Run it: `./mpc`.
+````
+std::vector<double> X = {0.0, 0.05, 0.5, 0.95, 1.0}
+std::vector<double> Y = {0.0, 0.0,  0.5,  1.0, 1.0}
+````
+The spline is compute once when the navigation starts, it is then used for all subsequent lane change trajectory generation.
+Given a lane change distance, DS, and lane travelling distance, DD, the D coordinate can be obtained from the S coordinate by scaing gthe curve by DS, DD.
 
-## Tips
+### Normalizing S Coordinate
 
-1. It's recommended to test the MPC on basic examples to see if your implementation behaves as desired. One possible example
-is the vehicle starting offset of a straight line (reference). If the MPC implementation is correct, after some number of timesteps
-(not too many) it should find and track the reference line.
-2. The `lake_track_waypoints.csv` file has the waypoints of the lake track. You could use this to fit polynomials and points and see of how well your model tracks curve. NOTE: This file might be not completely in sync with the simulator so your solution should NOT depend on it.
-3. For visualization this C++ [matplotlib wrapper](https://github.com/lava/matplotlib-cpp) could be helpful.)
-4.  Tips for setting up your environment are available [here](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/0949fca6-b379-42af-a919-ee50aa304e6a/lessons/f758c44c-5e40-4e01-93b5-1a82aa4e044f/concepts/23d376c7-0195-4276-bdf0-e02f1f3c665d)
-5. **VM Latency:** Some students have reported differences in behavior using VM's ostensibly a result of latency.  Please let us know if issues arise as a result of a VM environment.
+Since the road is circular, the S coordinate needs to be normalized to [0, length of road]. This normalization has also to be allpied in distance calculation.
 
-## Editor Settings
+Furthermore, for the spline curve, SX, and SY, we need to add the last waypoint to the begining of the curves' control points, and add the first point to the end of the curves' control points. However, to have second order continuity at the begining, two points from the one end are added to the other end.
 
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
+## Results
 
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
+The following video was taken before the submission to demostrate the vehicle navigation using the implemented path planner:
 
-## Code Style
+[Path Planning Demo] (self_driving_car_nanodegree_program 10_29_2018 8_27_42 PM.mp4)
 
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
+It is to be noted that there are many factors that might affect the results. For the program to run reasonably, some reasonable hardware might be needed. Also on Windows 10, the simulator could run into issues. This happened once in my case that took me hours to figure that the simulator was the issue. I had to remove the simulator, and unzip it from the zip file again for it to work again.
 
-## Project Instructions and Rubric
+## Discussion
 
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
+I could use the same approach suggected in the project material, but it is interesting to see if spline work well as well. This tool me extra time to work on the project. But the result is very positive for me to conclude that it's feasibility.
 
-More information is only accessible by people who are already enrolled in Term 2
-of CarND. If you are enrolled, see [the project page](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/f1820894-8322-4bb3-81aa-b26b3c6dcbaf/lessons/b1ff3be0-c904-438e-aad3-2b5379f0e0c3/concepts/1a2255a0-e23c-44cf-8d41-39b8a3c8264a)
-for instructions and the project rubric.
+###  The advantage of using spline curve for the road's waypoints
 
-## Hints!
+This approach has the following advantages over other methods:
 
-* You don't have to follow this directory structure, but if you do, your work
-  will span all of the .cpp files here. Keep an eye out for TODOs.
+1. There is no need for map to/from local coordinate (vehicle) transformations for computing the vechicle's trajectotry.
+2. The approach is more efficient for mapping S back to XY coordinate. In my tests with 10 Million operations, the spline's approach took 593 millieseconds while the original approach included in main.cpp took 696 millieseconds.
+3. For computing normal, the spline approach seems produce smoother result as it is second order continueous.
+4. In computing the waypoints for asmooth trajectory, this approach also yield constant velocity comparing with the approach used in the Q&A which computes the waypoints in the vehicle's local coordinate system using spline. Even though its result will still be better than using the map's coordinate, but there will be still some level of distoration unless the spline is a straight line.
 
-## Call for IDE Profiles Pull Requests
+### The Challenge With the Spline Approach
 
-Help your fellow students!
+The biggest challenge is the algorithm may be different from the algorithm the simulator is using. This results in bigger error terms that might sometime caused the simulator to treat the generated trajectory as having incidence. This took me extra time to tune the parameters for satisfactory results. The simple approach that I took to reduce incidences is to uae lower speed and acceleration limits.
 
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to we ensure
-that students don't feel pressured to use one IDE or another.
+### TO DO
 
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
-
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
-
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
-
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
-
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
-
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
+Having implemented a very simple path planner my self, I ganed appreciation on how difficult and how much works it is to put an autonomous vehicle on the road. There are much more to learn, to experiment, and to do. Keep learning and have fun. 

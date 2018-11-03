@@ -1,7 +1,9 @@
 #ifndef _MODEL_VEHICLE_HPP_
 #define _MODEL_VEHICLE_HPP_
 #include <vector>
+#include <functional>
 #include "../utils/Config.hpp"
+#include "../utils/spline.h"
 #include "Road.hpp"
 
 using namespace std;
@@ -13,6 +15,9 @@ class Navigator;
  */ 
 class Vehicle {
   double distanceToTarget;
+  static bool initialized;
+  static tk::spline changeTrajectory;
+
   friend class Navigator;
 public:
   double x;
@@ -35,7 +40,11 @@ public:
   int len = Config::Lf * 1.5;
   double maxAcceleration = Config::maxAcceleration;
 
-  Vehicle() {};
+  Vehicle() {
+    if (!initialized) {
+      initialize();
+    }
+  };
 
   /**
    * Constructor, takes a vector of: id, x, y, vx, vy, s, d
@@ -56,6 +65,8 @@ public:
    * Copy constructor
    */ 
   Vehicle(const Vehicle &another);
+
+  static void initialize();
 
   void initFrenet();
 
@@ -211,7 +222,8 @@ bool onSameLane(const double my_d, const double another_d, const Vehicle &anothe
    * Generate trajectory that will keep the current lane with the current kinematic
    * @param horizon the horizon step, each step is Config::dt duration
    */ 
-  std::vector<vector<double>> generatePredictions(double s, double d, double v, double a, int horizon = Config::N);
+  std::vector<vector<double>> generatePredictions(double s, double d, double v, std::function<double (double)> a, 
+                    double newD, double start_s, double start_d, double change_distance, int horizon = Config::N);
   
   std::vector<vector<double>> generatePredictions(int horizon = Config::N);
   

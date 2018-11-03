@@ -2,6 +2,7 @@
 #define _CONTROL_NAVIGATOR_HPP_
 #include <iostream>
 #include <random>
+#include <functional>
 #include <deque>
 #include <vector>
 #include <string>
@@ -9,34 +10,11 @@
 #include "../utils/Config.hpp"
 #include "../model/Road.hpp"
 #include "../model/Vehicle.hpp"
+#include "../model/State.hpp"
+#include "Cost.hpp"
 #include "Navigator.hpp"
 
 using namespace std;
-
-enum NavigationState {
-    KL = 1,
-    LCL,
-    LCR,
-    PLCL,
-    PLCR,
-    COLLIIDED
-};
-
-struct StateTransition {
-    NavigationState current = NavigationState::KL;
-    NavigationState target = NavigationState::KL;
-    int targetLane;
-    double targetS;
-    double targetV;
-    double minV;
-    double distanceAhead;
-    double distanceBehind;
-
-    StateTransition() {};
-    StateTransition(const NavigationState from, const NavigationState to, const double minSpeed, const double targetSpeed, 
-                    const double dAhead, const double dBehind): current(from), target(to), minV(minSpeed), 
-                    targetV(targetSpeed), distanceAhead(dAhead), distanceBehind(dBehind) {};
-};
 
 /**
  * The Navigator class control the navigation of a vehicle. It is responsible for the 
@@ -47,20 +25,18 @@ protected:
   Vehicle *vehicle = NULL;
   NavigationState state = NavigationState::KL;
   StateTransition *currentTransition = NULL;
+  CostEvaluator cost;
+  long long lastLaneChangeTime;
 
   /**
-   * Navigate the vehicle and generate trajectory
-   * @param fusion the sensor fusion data of other vehicle in the same side of the road
-   */
-  vector<vector<double>> navigate(vector<Vehicle> &fusion);
+   * Generate trajectory to the target lane
+   */ 
+  std::vector<std::vector<double>> generateTrajectory(const vector<Vehicle> &fusion, const double laneChangeDistance);
 
   /**
-   * Find the maximum acceleration to reach the maximum safe speed in the given time interval
-   * @param fusion the sensor fusion data of other vehicle in the same side of the road
-   * @param lane the target lane
-   * @param t the time horizon
+   * Find the acceleration for the transition
    */
-  double getMaxAcceleration(vector<Vehicle> &fusion, int lane, double t);
+  std::function<double (double)> getAcceleration(StateTransition &transition);
 
   /**
    * Find vehicles on collision course
@@ -91,14 +67,14 @@ protected:
    * @param fusion the sensor fusion data of other vehicle in the same side of the road
    * @param currentLane the current lane
    */ 
- vector<StateTransition> getLaneChangeTransitions(vector<Vehicle> &fusion, int currentLane, double t);
+ vector<StateTransition> getLaneStateTransitions(vector<Vehicle> &fusion, int currentLane, double t);
 
- void getLaneChangeTransition(vector<StateTransition> &transitions, vector<Vehicle> &fusion, bool isLeft);
+ void getLaneStateTransition(vector<StateTransition> &transitions, vector<Vehicle> &fusion, const int currentLane, const int laneChange);
   
 /**
- * Sort vehicle according to their distance from the controlled vehicle
+ * Order insert vehicle according to their distance from the controlled vehicle
  */ 
-void sortVehicle(vector<Vehicle> vehicles);
+void orderedInsert(vector<Vehicle> &vehicles, Vehicle &v);
 
 public:
   std::deque<std::vector<double>> predictions;
@@ -119,13 +95,26 @@ public:
   void initializeVehicle(const double x, const double y, const double s, const double d, const double yaw, const double v = 0,
                         const double LF=Config::Lf, const double maxAccel=Config::maxAcceleration);
 
+  /**
+   * Return true if the vehicle has been initialized
+   */ 
   bool isVehicleInitialized() { return vehicle != NULL;}
 
+  /**
+   * Return the controlled vehicle
+   */ 
   Vehicle *getVehicle() { return vehicle;};
 
+  /**
+   * Update the left over trajectory
+   */ 
   void update(const std::vector<double>& previous_x, const std::vector<double>& previous_y);
 
-  std::vector<std::vector<double>> generateTrajectory(vector<Vehicle> &fusion, int laneShift=0);
+  /**
+   * Navigate the vehicle and generate trajectory
+   * @param fusion the sensor fusion data of other vehicle in the same side of the road
+   */
+  vector<vector<double>> navigate(vector<Vehicle> &fusion);
 
   virtual ~Navigator() {
     delete vehicle;

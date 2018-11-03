@@ -11,21 +11,24 @@ Road::Road(const std::vector<double> &s, const std::vector<double> &x, const std
     vector<double> S;
     vector<double> X;
     vector<double> Y;
-    // Add the end point to the start for continuity
-    S.push_back(s[s.size() - 2] - s.back());
+    // Add the end points to the start for 2nd order continuity
+    S.push_back(s[s.size() - 2] - maxS);
+    X.push_back(x[x.size() - 2]);
+    Y.push_back(y[y.size() - 2]);
+    S.push_back(s.back() - maxS);
     X.push_back(x.back());
     Y.push_back(y.back());
     // Add the waypoints
     S.insert(S.end(), s.begin(), s.end());
     X.insert(X.end(), x.begin(), x.end());
     Y.insert(Y.end(), y.begin(), y.end());
-    // append the starting point for continuity
+    // append the start points to the end for 2nd order continuity
     S.push_back(maxS);
     X.push_back(x[0]);
     Y.push_back(y[0]);
-    // S.push_back(s[1] + maxS);
-    // X.push_back(x[1]);
-    // Y.push_back(y[2]);
+    S.push_back(s[1] + maxS);
+    X.push_back(x[1]);
+    Y.push_back(y[1]);
     splineSX.set_points(S, X);
     splineSY.set_points(S, Y);
 }

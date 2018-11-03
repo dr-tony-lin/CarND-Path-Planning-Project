@@ -9,8 +9,21 @@
 
 using namespace std;
 
+std::vector<double> changeTrajectoryX = {0.0, 0.05, 0.5, 0.95, 1.0};
+std::vector<double> changeTrajectoryY = {0.0, 0.0,  0.5,  1.0, 1.0};
+bool Vehicle::initialized = false;
+tk::spline Vehicle::changeTrajectory;
+
+void Vehicle::initialize() {
+  changeTrajectory.set_points(changeTrajectoryX, changeTrajectoryY);
+  initialized = true;
+}
+
 Vehicle::Vehicle(const vector<double> &data): x(data[1]), y(data[2]), s(data[5]), d(data[6]), 
-                    v(min(MpH2MpS(length(data[3], data[4])), Road::getCurrentRoad().getSpeedLimit())) {
+                    v(length(data[3], data[4])) {
+  if (!initialized) {
+    initialize();
+  }
   if (v < EPSILON) {
     v = dx = dy = 0;
   }
@@ -23,6 +36,9 @@ Vehicle::Vehicle(const vector<double> &data): x(data[1]), y(data[2]), s(data[5])
 
 Vehicle::Vehicle(const double _x, const double _y, const double _s, const double _d, const double yaw, const double _v): 
           x(_x), y(_y), s(_s), d(_d), v(min(MpH2MpS(_v), Road::getCurrentRoad().getSpeedLimit())) {
+  if (!initialized) {
+    initialize();
+  }
   double rad = deg2rad(yaw);
   dx = cos(rad);
   dy = sin(rad);
@@ -47,6 +63,7 @@ Vehicle::Vehicle(const Vehicle &another) {
     width = another.width;
     Lf = another.Lf;
     maxAcceleration = another.maxAcceleration;
+    distanceToTarget = another.distanceToTarget;
 }
 
 Vehicle & Vehicle::operator=(const Vehicle &another) {
@@ -67,6 +84,7 @@ Vehicle & Vehicle::operator=(const Vehicle &another) {
     width = another.width;
     Lf = another.Lf;
     maxAcceleration = another.maxAcceleration;
+    distanceToTarget = another.distanceToTarget;
 }
 
 void Vehicle::initFrenet() {
@@ -77,10 +95,6 @@ void Vehicle::initFrenet() {
     ad = vf[1] * a;
 }
 
-/**
- * Set length of the vehicle between the front and back wheels
- * @param lf the length
- */ 
 void Vehicle::setLf(double lf) { 
     Lf = lf;
     if (len < Lf * 1.5) {
@@ -89,22 +103,49 @@ void Vehicle::setLf(double lf) {
 }
 
 vector<vector<double>> Vehicle::generatePredictions(int horizon) {
-  return generatePredictions(s, d, v, a);
+  return generatePredictions(s, d, v, [this](double t)->double {return a;}, d, s, 10, d); // 20 is not used as there is no lane change
 }
 
-vector<vector<double>> Vehicle::generatePredictions(double s, double d, double v, double a, int horizon) {
+vector<vector<double>> Vehicle::generatePredictions(double s, double d, double v, std::function<double (double)> acelFunc, double new_d,
+                                                    double start_s, double start_d, double change_distance, int horizon) {
   vector<vector<double>> predictions;
-  double lane = Road::getCurrentRoad().dToLane(d);
-  double new_d = Road::getCurrentRoad().laneToCenterD(lane);
-  double dd = (new_d - d) / horizon;
+  double lane = Road::getCurrentRoad().dToLane(new_d);
+  new_d = Road::getCurrentRoad().laneToCenterD(lane);
+  double drange = (new_d - start_d);
+  bool laneChange = abs(drange) > Road::getCurrentRoad().getLaneWidth() - EPSILON;
+  double dd = (new_d - d) * 0.3 * v * Config::dt;
+  double scale_d = 0;
+  if (laneChange) { // lane change
+    scale_d = drange;
+  }
   v = min(v, Road::getCurrentRoad().getSpeedLimit());
+  double next_d = d;
+  double next_v = v;
   for (int i = 1; i <= horizon; i++) {
     double t = i * Config::dt;
-    double next_s = sAfter(s, v, a, t);
-    d += dd;
-    double next_v = max(0.0, min(v + a * t, Road::getCurrentRoad().getSpeedLimit()));
-    vector<double> xy = Road::getCurrentRoad().getXY(next_s, d);
-    predictions.push_back({lane, xy[0], xy[1], next_s, d, next_v, a});
+    double aa = a + acelFunc(t);
+    if (aa >= 0) {
+      aa = min(Config::maxJerk, aa);
+    }
+    else {
+      aa = max(-Config::maxJerk, aa);
+    }
+    next_v += aa * Config::dt;
+    next_v = max(0.0, min(next_v, Road::getCurrentRoad().getSpeedLimit()));
+    double next_s = sAfter(s, next_v, aa, t);
+    if ((drange > 0 && next_d < new_d) || (drange < 0 && next_d > new_d)) {
+      if (laneChange) {
+        next_d = start_d + changeTrajectory(Road::getCurrentRoad().distanceS(next_s, start_s)/change_distance) * drange;
+      }
+      else {
+        next_d += dd;
+      }
+    }
+    vector<double> xy = Road::getCurrentRoad().getXY(next_s, next_d);
+    predictions.push_back({lane, xy[0], xy[1], next_s, next_d, next_v, aa});
+  #ifdef DEBUG_OUT
+    cout << "Trajectory t: " << t << " a: " << a << " s: " << next_s << " v: " << next_v << " d: " << next_d << endl;
+  #endif
   }
   return predictions;
 }
@@ -118,12 +159,12 @@ bool Vehicle::onSameLane(const double my_d, const double another_d, const Vehicl
 }
 
 bool Vehicle::hasCollision(Vehicle &another) {
-    return onSameLane(d, another.d, another) && fabs(s - another.s) - max(len, another.len) < 0;
+    return onSameLane(d, another.d, another) && fabs(Road::getCurrentRoad().distanceS(s, another.s)) - max(len, another.len) < 0;
 }
 
 bool Vehicle::tooClose(const double my_s, const double my_d, const double my_v, 
                         const double another_s, const double another_d, const double another_v, const Vehicle &another) {
-  if (fabs(my_s - len - another_s) < Config::safeDistance(another_v - my_v)) {
+  if (fabs(Road::getCurrentRoad().distanceS(my_s - len, another_s)) < Config::safeDistance(another_v - my_v)) {
     return onSameLane(my_d, another_d, another);
   } 
 

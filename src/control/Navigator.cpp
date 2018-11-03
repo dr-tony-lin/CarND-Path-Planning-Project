@@ -3,6 +3,7 @@
 #include <cmath>
 #include <string>
 #include <iterator>
+#include <chrono>
 #include "../utils/utils.h"
 #include "../model/Road.hpp"
 #include "../model/Vehicle.hpp"
@@ -10,12 +11,18 @@
 
 using namespace std;
 
+long long time_since_epoch() {
+    auto now = chrono::system_clock::now().time_since_epoch();
+    return chrono::duration_cast<std::chrono::seconds>(now).count();
+}
+
 void Navigator::initializeVehicle(const double x, const double y, const double s, const double d,
                         const double yaw, const double v, const double LF, const double maxAccel) {              
     vehicle = new Vehicle(x, y, s, d, yaw, v);
     vehicle->setLength(LF);
     vehicle->maxAcceleration = maxAccel;
     predictions.clear();
+    lastLaneChangeTime = 0;
 }
 
 void Navigator::update(const vector<double>& previous_x, const vector<double>& previous_y) {
@@ -29,7 +36,7 @@ void Navigator::update(const vector<double>& previous_x, const vector<double>& p
         vector<double> last2 = predictions[predictions.size() - 2];
         vehicle->dx = vehicle->x - last2[1];
         vehicle->dy = vehicle->y - last2[2];
-        vector<double> fNormal = unitv(vehicle->s - last2[3], vehicle->d - last2[4]);
+        vector<double> fNormal = unitv(Road::getCurrentRoad().distanceS(vehicle->s, last2[3]), vehicle->d - last2[4]);
         vehicle->vs = vehicle->v * fNormal[0];
         vehicle->vd = vehicle->v * fNormal[1];
         vehicle->as = vehicle->a * fNormal[0];
@@ -41,60 +48,80 @@ void Navigator::update(const vector<double>& previous_x, const vector<double>& p
 }
 
 vector<vector<double>> Navigator::navigate(vector<Vehicle> &fusion) {
-    vector<vector<double>> trajectory;
-    int horizon = (Config::N - predictions.size());
-    int lane = Config::numberOfLanes; // on the side of the road
-    double targetD, maxAccel;
-    switch (state) {
-      case NavigationState::KL:
-      case NavigationState::PLCL:
-      case NavigationState::PLCR: {
-        lane = Road::getCurrentRoad().dToLane(vehicle->d);
-        break;
-      }
-      case NavigationState::LCL: {
-        double newD = vehicle->d - Config::laneWidth;
-        lane = Road::getCurrentRoad().dToLane(newD);
-        break;
-      }
-      case NavigationState::LCR: {
-        double newD = vehicle->d + Config::laneWidth;
-        lane = Road::getCurrentRoad().dToLane(newD);
-        break;
-      }
-    }
-
-    maxAccel = getMaxAcceleration(fusion, lane, horizon * Config::dt);
-    targetD = Road::getCurrentRoad().laneToCenterD(lane);
-
-    switch (state) {
-      case NavigationState::KL:{
-        if (vehicle->v < Road::getCurrentRoad().getSpeedLimit() * 0.9 && maxAccel < EPSILON) { // we are not fast enough
-
+    if (currentTransition != NULL && currentTransition->target != NavigationState::KL) {
+        if (fabs(vehicle->d - Road::getCurrentRoad().laneToCenterD(currentTransition->immediateLane)) < 0.01) { // we have reached the goal
+#ifdef INFO_OUT
+        cout << "Transition ended: " << currentTransition->current << "  to " << currentTransition->target << " lane: " << currentTransition->immediateLane
+            << " min speed ahead: " << currentTransition->limits.minSpeedAhead << " max speed behind:" << currentTransition->limits.maxSpeedBehind << " dist ahead: " << currentTransition->limits.distanceAhead
+            << " dist behind: " << currentTransition->limits.distanceAhead << " current d: " << vehicle->d << endl;
+#endif
+            state = NavigationState::KL;
+            delete currentTransition;
+            currentTransition = NULL;
+            lastLaneChangeTime = time_since_epoch();
         }
-        break;
-      }
-      case NavigationState::PLCL:
-      case NavigationState::PLCR: {
-          
-        break;
-      }
-      case NavigationState::LCL:  {
-        double newD = vehicle->d - Config::laneWidth;
-        lane = Road::getCurrentRoad().dToLane(newD);
-        break;
-      }
-      case NavigationState::LCR: {
-        double newD = vehicle->d + Config::laneWidth;
-        lane = Road::getCurrentRoad().dToLane(newD);
-        break;
-      }
+    }
+    
+    int currentLane = Road::getCurrentRoad().dToLane(vehicle->d);
+
+    int horizon = (Config::N - predictions.size());
+    vector<StateTransition> transitions;
+#ifdef DEBUG_OUT
+        cout << "Creating transitions ..." << transitions.size() << endl;
+#endif
+    transitions = getLaneStateTransitions(fusion, currentLane, horizon * Config::dt);
+    
+    StateTransition *transition = NULL;
+    StateTransition *kl = NULL;
+    double minCost = 1e16;
+    double klCost = 1e16;
+#ifdef DEBUG_OUT
+    cout << "Transitions generated: " << transitions.size() << endl;
+#endif
+    for (auto it = transitions.begin(); it != transitions.end(); it++) {
+        double c = cost(*vehicle, *it);
+        if (it->target == NavigationState::KL) {
+            klCost = c;
+            kl = &*it;
+        }
+        if (c < minCost) {
+            minCost = c;
+            transition = &*it;
+        }
+#ifdef DEBUG_OUT
+        StateTransition &t = *it;
+        cout << "Transition " << it->current << "  to " << it->target << " lane: " << it->immediateLane
+            << " min speed ahead: " << it->limits.minSpeedAhead << " max speed behind:" << it->limits.maxSpeedBehind << " dist ahead: " << it->limits.distanceAhead
+            << " dist behind: " << it->limits.distanceBehind << " Cost: " << c << endl;
+#endif
+    }
+    if (transition != kl && klCost - minCost< 0.05) { // the cost difference is too small, avoid prematurely change lane
+        transition = kl; 
+    }
+    // Compute lane change distance if it is to take place
+    double laneChangeDistance = Config::maxLaneChangeDistance;
+    if (transition != NULL) {
+        if (currentTransition != NULL) {
+            laneChangeDistance = min(Config::maxLaneChangeDistance, min(currentTransition->limits.distanceAhead, transition->limits.distanceAhead));
+        }
+        else {
+            laneChangeDistance = min(Config::maxLaneChangeDistance, transition->limits.distanceAhead);
+        }
+
+        currentTransition = new StateTransition(*transition);
+        state = currentTransition->target;
+        currentTransition->startS = vehicle->s;
+        currentTransition->startD = vehicle->d;
+        cout << "Pick transition " << transition->current << "  to " << transition->target << " to lane: " << transition->immediateLane
+            << " from  lane: " << transition->sourceLane << " min speed ahead: " << transition->limits.minSpeedAhead << " max speed behind:" << transition->limits.maxSpeedBehind 
+            << " dist ahead: " << transition->limits.distanceAhead << " dist behind: " << transition->limits.distanceBehind << " vehicle ahead: " << transition->nVehicleAhead
+            << " vehicle behind: " << transition->nVehicleBehind << " Cost: " << minCost << endl;
     }
 
-    return trajectory;
+    return generateTrajectory(fusion, laneChangeDistance);
 }
 
- vector<StateTransition> Navigator::getLaneChangeTransitions(vector<Vehicle> &fusion, int currentLane, double t) {
+ vector<StateTransition> Navigator::getLaneStateTransitions(vector<Vehicle> &fusion, int currentLane, double t) {
     double nextS = vehicle->sAfter(t);
     double nextV = vehicle->vAfter(t);
     vector<StateTransition> transitions;
@@ -105,54 +132,106 @@ vector<vector<double>> Navigator::navigate(vector<Vehicle> &fusion) {
     // Find cars on the left and right lanes that are close enought to check
     for (Vehicle &car: fusion) {
         int carLane = Road::getCurrentRoad().dToLane(car.d);
-        if ((carLane <= currentLane + 1 && carLane >= currentLane - 1) && fabs(car.s - vehicle->s) < Config::maxDistance) { // consider car close enough to check
-            if (carLane == currentLane + 1) { // om right lane
-                vehiclesOnRight.push_back(car);
+        if ((carLane <= currentLane + 1 && carLane >= currentLane - 1) && fabs(Road::getCurrentRoad().distanceS(car.s, vehicle->s)) < Config::maxDistance) { // consider car close enough to check
+            if (carLane == currentLane + 1) { // on right lane
+                orderedInsert(vehiclesOnRight, car);
             }
             else if (carLane == currentLane - 1) { // on left lane
-                vehiclesOnLeft.push_back(car);
+                orderedInsert(vehiclesOnLeft, car);
             }
             else { // on current lane
-                vehiclesOnLane.push_back(car);
+                orderedInsert(vehiclesOnLane, car);
             }
         }
     }
 
-    if (currentLane > 0) {
-        getLaneChangeTransition(transitions, vehiclesOnLeft, true);
+    StateTransition *kl = NULL;
+    if (currentTransition == NULL || currentTransition->target == NavigationState::KL) { // update keep lane transition
+        getLaneStateTransition(transitions, vehiclesOnLane, currentLane, 0);
+        kl = &transitions.front();
     }
-    if (currentLane < Road::getCurrentRoad().getNumberOfLanes(nextS) - 1) {
-        getLaneChangeTransition(transitions, vehiclesOnRight, false);
+    
+    if (currentLane > 0 && (currentTransition == NULL ||
+            (currentTransition->target != NavigationState::KL && currentTransition->targetLane == currentLane - 1) ||
+            (currentTransition->target == NavigationState::KL && time_since_epoch() - lastLaneChangeTime > Config::minLaneChangeFreezeTime))) {
+        getLaneStateTransition(transitions, vehiclesOnLeft, currentLane, -1); // With this it is possible to change two lanes
+        StateTransition &last = transitions.back();
+        if (kl != NULL && kl != &last) {
+            if (kl->target == NavigationState::KL) {
+                last.previousLimits = kl->limits;
+            }
+            else {
+                last.previousLimits = kl->previousLimits;
+            }
+        }
+    }
+    if (currentLane < Road::getCurrentRoad().getNumberOfLanes(nextS) - 1 && (currentTransition == NULL ||
+            (currentTransition->target != NavigationState::KL && currentTransition->targetLane == currentLane + 1) ||
+            (currentTransition->target == NavigationState::KL && time_since_epoch() - lastLaneChangeTime > Config::minLaneChangeFreezeTime))) {
+        getLaneStateTransition(transitions, vehiclesOnRight, currentLane, 1);
+        StateTransition &last = transitions.back();
+        if (kl != NULL && kl != &last) {
+            if (kl->target == NavigationState::KL) {
+                last.previousLimits = kl->limits;
+            }
+            else {
+                last.previousLimits = kl->previousLimits;
+            }
+        }
     }
 
     return transitions;
 }
 
-void Navigator::getLaneChangeTransition(vector<StateTransition> &transitions, vector<Vehicle> &fusion, bool isLeft) {
-    if (fusion.size() == 0) { // no vehicle on the lane in the maximum horizon, good to turn into
-        NavigationState targetState;
-        if (isLeft) {
-            targetState = state == NavigationState::PLCL? NavigationState::LCL: NavigationState::PLCL;
+void Navigator::getLaneStateTransition(vector<StateTransition> &transitions, vector<Vehicle> &fusion, const int currentLane, const int laneChange) {
+    /**
+     * Skip lane change preparation state for now, notheing to do in the simulator
+     */ 
+    if (fusion.size() == 0) { // no vehicle on the lane in the maximum horizon
+        if ( currentTransition == NULL || (currentTransition->target == NavigationState::KL || 
+                (currentTransition->targetLane != currentLane + laneChange && currentTransition->targetLane - currentTransition->sourceLane == laneChange))) {
+            // No transition, or keep lane, or in transition but the target lane is different from the lane we are checking - can change two lanes but no bounce back
+            NavigationState targetState;
+            if (laneChange == -1) {
+                targetState = NavigationState::LCL; // state == NavigationState::PLCL? NavigationState::LCL: NavigationState::PLCL;
+            }
+            else if (laneChange == 1) {
+                targetState = NavigationState::LCR; // state == NavigationState::PLCR? NavigationState::LCR: NavigationState::PLCR;
+            }
+            else {
+                targetState = state;
+            }
+            transitions.push_back(
+                        StateTransition(state, 
+                                        targetState,
+                                        currentLane,
+                                        currentLane + laneChange,
+                                        Road::getCurrentRoad().getSpeedLimit(),
+                                        0,
+                                        Config::maxDistance,
+                                        -Config::maxDistance,
+                                        0,
+                                        0));
+#ifdef DEBUG_OUT
+            StateTransition t = transitions.back();
+            cout << "Create no vehicle transition on " << currentLane << " from " << t.current << "  to " << t.target << " lane: " << t.immediateLane
+                << " min speed ahead: " << t.limits.minSpeedAhead << " max speed behind:" << t.limits.maxSpeedBehind << " dist ahead: " << t.limits.distanceAhead
+                << " dist behind: " << t.limits.distanceAhead << endl;
+#endif
         }
-        else {
-            targetState = state == NavigationState::PLCR? NavigationState::LCR: NavigationState::PLCR;
-        }
-        transitions.push_back(
-                    StateTransition(state, 
-                                    targetState,
-                                    Road::getCurrentRoad().getSpeedLimit(),
-                                    Road::getCurrentRoad().getSpeedLimit(),
-                                    Config::maxDistance,
-                                    Config::maxDistance));
     }
     else {
+#ifdef DEBUG_OUT
+        cout << "Generate transitions from " << currentLane << "  to " << (currentLane + laneChange) << " speed limit: " << Road::getCurrentRoad().getSpeedLimit() << endl;
+#endif
         double distanceAhead = 1000000;
         double distanceBehind = -1000000;
-        double minSpeedAhead = 1000000;
-        double maxSpeedBehind = -1000000;
-        double speedAhead = 0;
+        double minSpeedAhead = Road::getCurrentRoad().getSpeedLimit();
+        double maxSpeedBehind = 0;
+        double speedAhead = Road::getCurrentRoad().getSpeedLimit();
         double speedBehind = 0;
-        sortVehicle(fusion);
+        int nAhead = 0;
+        int nBehind = 0;
         for (auto car: fusion) {
             if (car.distanceToTarget > 0) {
                 if (car.distanceToTarget < distanceAhead) {
@@ -160,86 +239,179 @@ void Navigator::getLaneChangeTransition(vector<StateTransition> &transitions, ve
                     speedAhead = car.v;
                 }
                 minSpeedAhead = min(car.v, minSpeedAhead);
+                nAhead++;
             }
-            else if (car.distanceToTarget < 0) {
+            else {
                 if (car.distanceToTarget > distanceBehind) {
                     distanceBehind = car.distanceToTarget;
                     speedBehind = car.v;
                 }
                 maxSpeedBehind = max(car.v, maxSpeedBehind);
+                nBehind++;
             }
         }
-
-        if (distanceAhead < Config::safeLaneChangeDistance(fabs(minSpeedAhead - vehicle->s)) || 
-            distanceBehind < Config::safeLaneChangeDistance(fabs(maxSpeedBehind - vehicle->s)) ||
-            minSpeedAhead < vehicle->v * 1.1) { // not good to change lane
-            NavigationState targetState;
-            if (isLeft) {
-                targetState = state == NavigationState::PLCL? NavigationState::KL: NavigationState::PLCL;
-            }
-            else {
-                targetState = state == NavigationState::PLCR? NavigationState::KL: NavigationState::PLCR;
-            }
-            transitions.push_back( // basically, we are rolling back here, sould we also sort out the vehicle on the lane and process accordingly?
-                        StateTransition(state, 
-                                        targetState,
-                                        vehicle->v,
-                                        vehicle->v,
-                                        Config::maxDistance,
-                                        Config::maxDistance));
+#ifdef DEBUG_OUT
+        cout << "Dist ahead: " << distanceAhead << " dist behind: " << distanceBehind << " min V ahead: " << minSpeedAhead 
+            << " max V behind: " << maxSpeedBehind << " V ahead: " << speedAhead << " V behind: "  << speedBehind
+            << " cars ahead: " << nAhead << " cars behind: " << nBehind << endl;
+#endif
+        if (laneChange == 0) { // Keep lane, we will always generate keep lane transition to update speed, and detect dangers
+            transitions.push_back(
+                StateTransition(state, 
+                                state,
+                                currentLane,
+                                currentLane,
+                                minSpeedAhead,
+                                maxSpeedBehind,
+                                distanceAhead,
+                                distanceBehind,
+                                nAhead,
+                                nBehind));
+#ifdef DEBUG_OUT
+            StateTransition t = transitions.back();
+            cout << "Create keep lane transition on " << currentLane << " from " << t.current << "  to " << t.target << " lane: " << t.immediateLane
+                << " min speed ahead: " << t.limits.minSpeedAhead << " max speed behind:" << t.limits.maxSpeedBehind << " dist ahead: " << t.limits.distanceAhead
+                << " dist behind: " << t.limits.distanceBehind << endl;
+#endif
         }
-        else {
-            NavigationState targetState;
-            if (isLeft) {
-                targetState = state == NavigationState::PLCL? NavigationState::LCL: NavigationState::PLCL;
+        else { // we are seeking opportunity to run faster
+            double minAheadDistance = Config::safeLaneChangeFrontDistance(fabs(minSpeedAhead - vehicle->v));
+            double minBehindDistance = Config::safeLaneChangeBackDistance(fabs(maxSpeedBehind - vehicle->v));
+#ifdef DEBUG_OUT
+            cout << "Min dist ahead " << minAheadDistance << " min dist behind: " << minBehindDistance << " Dist ahead: " << distanceAhead << " dist behind: " << distanceBehind << endl;
+#endif
+            if (distanceAhead < minAheadDistance && -distanceBehind < minBehindDistance && minSpeedAhead < maxSpeedBehind) {
+                if (state != NavigationState::KL) { // squeezed, we have to rollback if we are changing lane
+                    NavigationState targetState;
+                    if (laneChange == -1) {
+                        targetState = NavigationState::KL; // state == NavigationState::PLCL? NavigationState::KL: NavigationState::PLCL;
+                    }
+                    else {
+                        targetState = NavigationState::KL; // state == NavigationState::PLCR? NavigationState::KL: NavigationState::PLCR;
+                    }
+                    transitions.push_back( // basically, we are rolling back here, sould we also sort out the vehicle on the lane and process accordingly?
+                                StateTransition(state, 
+                                                targetState,
+                                                currentLane,
+                                                currentLane,
+                                                minSpeedAhead,
+                                                maxSpeedBehind,
+                                                Config::maxDistance,
+                                                -Config::maxDistance,
+                                                nAhead,
+                                                nBehind));
+#ifdef DEBUG_OUT
+                    StateTransition t = transitions.back();
+                    cout << "Create rollback transition on " << currentLane << " from " << t.current << "  to " << t.target << " lane: " << t.immediateLane
+                        << " min speed ahead: " << t.limits.minSpeedAhead << " max speed behind:" << t.limits.maxSpeedBehind << " dist ahead: " << t.limits.distanceAhead
+                        << " dist behind: " << t.limits.distanceBehind << endl;
+#endif
+                }
+#ifdef DEBUG_OUT
+                else {
+                    cout << "No transition minAheadDistance " << minAheadDistance << " distanceAhead: " << distanceAhead
+                            << " minBehindDistance:  " << minBehindDistance << " distanceBehind: " << distanceBehind 
+                            << " minSpeedAhead: " << minSpeedAhead << " Vehicle V: " << vehicle->v << endl;
+                }
+#endif
             }
-            else {
-                targetState = state == NavigationState::PLCR? NavigationState::LCR: NavigationState::PLCR;
-            }
-            if (distanceAhead < 1000000 - EPSILON) { // we have car in front, and distance is OK
-                if (distanceBehind > 1000000 + EPSILON) { // we have car behind, and distance is OK
-                    // let the planner decide what to do if maxSpeedBehind < minSpeedAhead
+            else if ( currentTransition != NULL && (currentTransition->target == NavigationState::KL || 
+                (currentTransition->targetLane != currentLane + laneChange && currentTransition->targetLane - currentTransition->sourceLane == laneChange))) {
+                NavigationState targetState;
+                if (laneChange == -1) {
+                    targetState = NavigationState::LCL; //state == NavigationState::PLCL? NavigationState::LCL: NavigationState::PLCL;
+                }
+                else {
+                    targetState = NavigationState::LCR; //state == NavigationState::PLCR? NavigationState::LCR: NavigationState::PLCR;
+                }
+                if (distanceAhead < 1000000 - EPSILON) { // we have car in front, and distance is OK
+                    if (distanceBehind > -1000000 + EPSILON) { // we have car behind, and distance is OK
+                        // let the planner decide what to do if maxSpeedBehind < minSpeedAhead
+                        transitions.push_back(
+                                StateTransition(state, 
+                                                targetState,
+                                                currentLane,
+                                                currentLane + laneChange,
+                                                minSpeedAhead,
+                                                maxSpeedBehind,
+                                                distanceAhead,
+                                                distanceBehind,
+                                                nAhead,
+                                                nBehind));
+#ifdef DEBUG_OUT
+                    StateTransition t = transitions.back();
+                    cout << "Create front back transition on " << currentLane << " from " << t.current << "  to " << t.target << " lane: " << t.immediateLane
+                        << " min speed ahead: " << t.limits.minSpeedAhead << " max speed behind:" << t.limits.maxSpeedBehind << " dist ahead: " << t.limits.distanceAhead
+                        << " dist behind: " << t.limits.distanceBehind << endl;
+#endif
+                    }
+                    else { // we don't have car behind
+                        transitions.push_back(
+                                StateTransition(state, 
+                                                targetState,
+                                                currentLane,
+                                                currentLane + laneChange,
+                                                minSpeedAhead,
+                                                0,
+                                                distanceAhead,
+                                                -Config::maxDistance,
+                                                nAhead,
+                                                nBehind));
+#ifdef DEBUG_OUT
+                    StateTransition t = transitions.back();
+                    cout << "Create front transition on " << currentLane << " from " << t.current << "  to " << t.target << " lane: " << t.immediateLane
+                        << " min speed ahead: " << t.limits.minSpeedAhead << " max speed behind:" << t.limits.maxSpeedBehind << " dist ahead: " << t.limits.distanceAhead
+                        << " dist behind: " << t.limits.distanceBehind << endl;
+#endif
+                    }
+                }
+                else if (distanceBehind > -1000000 + EPSILON) { // we have car behind, but no car in front
                     transitions.push_back(
                             StateTransition(state, 
                                             targetState,
-                                            minSpeedAhead,
+                                            currentLane,
+                                            currentLane + laneChange,
+                                            Road::getCurrentRoad().getSpeedLimit(),
                                             maxSpeedBehind,
-                                            distanceAhead,
-                                            distanceBehind));
+                                            Config::maxDistance,
+                                            distanceBehind,
+                                            nAhead,
+                                            nBehind));
+#ifdef DEBUG_OUT
+                    StateTransition t = transitions.back();
+                    cout << "Create behind transition on " << currentLane << " from " << t.current << "  to " << t.target << " lane: " << t.immediateLane
+                        << " min speed ahead: " << t.limits.minSpeedAhead << " max speed behind:" << t.limits.maxSpeedBehind << " dist ahead: " << t.limits.distanceAhead
+                        << " dist behind: " << t.limits.distanceBehind << endl;
+#endif
                 }
-                else { // we don't have car behind
-                    transitions.push_back(
-                            StateTransition(state, 
-                                            targetState,
-                                            minSpeedAhead,
-                                            minSpeedAhead,
-                                            distanceAhead,
-                                            Config::maxDistance));
-                }
-            }
-            else if (distanceBehind > 1000000 + EPSILON) { // we have car behind, but no car in front
-                transitions.push_back(
-                        StateTransition(state, 
-                                        targetState,
-                                        Road::getCurrentRoad().getSpeedLimit(),
-                                        Road::getCurrentRoad().getSpeedLimit(),
-                                        Config::maxDistance,
-                                        distanceBehind));
             }
         }
     }
 }
 
-vector<vector<double>> Navigator::generateTrajectory(vector<Vehicle> &fusion, int laneShift) {
-  // TODO check if the lane shift is legal
-  double newD = vehicle->d + laneShift * Config::laneWidth;
-  int lane = Road::getCurrentRoad().dToLane(newD);
+vector<vector<double>> Navigator::generateTrajectory(const vector<Vehicle> &fusion, const double laneChangeDistance) {
+  int toLane;
+  int fromLane;
+  double startS, startD;
+  if (currentTransition == NULL) {
+      toLane = fromLane = Road::getCurrentRoad().dToLane(vehicle->d);
+      startS = vehicle->s;
+      startD = vehicle->d;
+  }
+  else {
+      fromLane = currentTransition->sourceLane;
+      toLane = currentTransition->immediateLane;
+      startS = currentTransition->startS;
+      startD = currentTransition->startD;
+  }
+  double newD = Road::getCurrentRoad().laneToCenterD(toLane);
   int horizon = (Config::N - predictions.size());
-  double maxAccel = getMaxAcceleration(fusion, lane, horizon * Config::dt);
-  vector<vector<double>> preds = vehicle->generatePredictions(vehicle->s, vehicle->d, vehicle->v, maxAccel, horizon);
 #ifdef DEBUG_OUT
-    cout <<  "Generate prediction from  s: " << vehicle->s << " d: " << vehicle->d << " v: " << vehicle->v << " a: " << MpS2MpH(maxAccel) << " horizon: " << horizon << endl;
+    cout <<  "Generate prediction from  s: " << vehicle->s << " d: " << vehicle->d << " v: " << vehicle->v << " horizon: " << horizon 
+         << " to lane: " << toLane << " new d: " << newD << endl;
 #endif
+  vector<vector<double>> preds = vehicle->generatePredictions(vehicle->s, vehicle->d, vehicle->v, getAcceleration(*currentTransition), 
+                                                                    newD, startS, startD, laneChangeDistance, horizon);
   for (auto it: preds) {
       predictions.push_back(it);
   }
@@ -257,119 +429,30 @@ vector<vector<double>> Navigator::generateTrajectory(vector<Vehicle> &fusion, in
     for (int i = 0; i < (int) predictions.size(); i += inc) {
         if (i >= (int) predictions.size() - inc && inc > 1) inc >>= 1;
         cout << i << " lane: " << predictions[i][0] <<  " x: " <<  predictions[i][1] << " y: " << predictions[i][2]  << " s: " << predictions[i][3] 
-            << " d: " << predictions[i][4] << " v: " << MpS2MpH(predictions[i][5]) << endl;
+            << " d: " << predictions[i][4] << " v: " << predictions[i][5] << endl;
     }
 #endif
 
   return {X, Y};
 } 
 
-double Navigator::getMaxAcceleration(vector<Vehicle> &fusion, int lane, double t) {
-    vector<Vehicle *> onCollisionCourse = findVehicleOnCollisionCourse(fusion, lane, Config::N * Config::dt, 10);
-    double newV = vehicle->vAfter(t); // the speed after t if we keep current accel
-    double newS = vehicle->sAfter(t); // the position after t if we keep current speed
-    if (state == NavigationState::COLLIIDED) { // we have collided with another vehicle, need a full stop full stop!
-        return vehicle->v > 0? -vehicle->v: 0;
+std::function<double (double)> Navigator::getAcceleration(StateTransition &transition) {
+    if (transition.nVehicleAhead == 0) {
+        return [](double t)->double {return Config::maxAcceleration;};
     }
-    if (onCollisionCourse.size() == 0) {
-        double accel = min(min((Road::getCurrentRoad().getSpeedLimit() - newV) / t, Config::maxJerk), vehicle->maxAcceleration);
-#ifdef DEBUG_OUT
-        cout << "No vehicle, v: " << newV << " s: " << newS << " a: " << MpS2MpH(accel) << endl;
-#endif
-        return accel;
+
+    // Here is the easiest approach is just to estimate the acceleration and let the navigation to correct the speed as it goes
+    double minDist = (transition.target == NavigationState::KL? Config::minSafeDistance: Config::minLaneChangeFrontDistance);
+    double distance = transition.limits.distanceAhead - minDist;
+    double vDiff = transition.limits.minSpeedAhead - vehicle->v;
+    double acel = vDiff + distance / 5.0;
+    if (acel > 0) {
+        acel = min(acel, Config::maxAcceleration);
     }
     else {
-        double result = 0;
-        double frontAccel = 1000000;
-        double backAccel = -1000000;
-        double bestFrontV = 0;
-        double bestBackV = 0;
-        double bestSafeDistance = 0;
-        double bestDistance = 0;
-        double vehicleV = 0;
-        for (auto car: onCollisionCourse) {
-            double collisionS = car->sAfter(t);
-            double safeDistance = Config::safeDistance(newV - car->v);
-            double distanceFront = Road::getCurrentRoad().distanceS(Road::getCurrentRoad().normalizeS(collisionS - Config::Lf * 1.5), newS);
-            double distanceBack = Road::getCurrentRoad().distanceS(collisionS, Road::getCurrentRoad().normalizeS(newS - vehicle->len));
-#ifdef DEBUG_OUT
-            cout << "Check on collision course: s: " << car->s << " d: " << car->d << " v: " << MpS2MpH(car->v) << " vs: " << MpS2MpH(car->vs)
-                    << " vd: " << MpS2MpH(car->vd) << " safe dist: " << safeDistance << " front dist: " << distanceFront << " back dist: " << distanceBack << endl;
-#endif
-            if (distanceFront > 0) {
-                // use current s and v for distance
-                double distance = Road::getCurrentRoad().distanceS(Road::getCurrentRoad().normalizeS(car->s - Config::Lf * 1.5 - safeDistance), vehicle->s); 
-                double targetV = min(car->v + distance / t + 0.5 * (car->a - vehicle->a) * t, Road::getCurrentRoad().getSpeedLimit());
-                double newA = (targetV - vehicle->v) / t;
-                if (newA - vehicle->a > Config::maxJerk) {
-                    newA = Config::maxJerk;
-                }
-                else if (newA - vehicle->a < -Config::maxJerk) {
-                    newA = -Config::maxJerk;
-                }
-                if (targetV > Road::getCurrentRoad().getSpeedLimit() * 0.8) {
-                    newA = newA * (Road::getCurrentRoad().getSpeedLimit() - targetV) / Road::getCurrentRoad().getSpeedLimit();
-                }
-                if (frontAccel > newA) {
-                    frontAccel = newA;
-                    bestFrontV = targetV;
-                    bestSafeDistance = safeDistance;
-                    vehicleV = car->v;
-                    bestDistance = distance;
-#ifdef DEBUG_OUT
-                    cout << "New front, v: " << newV << " safe dist to keep: " << bestSafeDistance << " distance to travel: " << bestDistance
-                            << " target v: " << bestFrontV << " accel: " << MpS2MpH(newA) << endl;
-#endif
-                }
-            }
-            else if (distanceBack < 0) { // Rear collission course
-                // use current s and v for distance
-                double distance = -Road::getCurrentRoad().distanceS(car->s, Road::getCurrentRoad().normalizeS(vehicle->s - vehicle->len - safeDistance)); 
-                double minV = min(car->v + distance / t + 0.5 * (car->a - vehicle->a) * t, Road::getCurrentRoad().getSpeedLimit());
-                double minA = (minV - vehicle->v) / t * 1.3; // 30% over what we need to avoid back collision
-                if (minA - vehicle->a > Config::maxJerk) {
-                    minA = Config::maxJerk;
-                }
-                else if (minA - vehicle->a < -Config::maxJerk) {
-                    minA = -Config::maxJerk;
-                }
-                if (minV > Road::getCurrentRoad().getSpeedLimit() * 0.8) {
-                    minA = minA * (Road::getCurrentRoad().getSpeedLimit() * 0.98 - minV) / Road::getCurrentRoad().getSpeedLimit();
-                }
-                if (backAccel < minA) {
-                    backAccel = minA;
-                    bestBackV = minV;
-                    bestSafeDistance = safeDistance;
-                    vehicleV = car->v;
-                    bestDistance = distance;
-#ifdef DEBUG_OUT
-                    cout << "New back, v: " << newV << " safe dist to keep: " << bestSafeDistance << " distance to travel: " << bestDistance
-                            << " target v: " << bestBackV << " accel: " << MpS2MpH(backAccel) << endl;
-#endif
-                }
-            }
-            else {
-                cout << "Error in collision detection! front: " << distanceFront << " back: " << distanceBack << endl;
-            }
-        }
-
-        
-        if (frontAccel < 1000000 - EPSILON) { // for rounding error
-            result = frontAccel;
-#ifdef DEBUG_OUT
-            cout << "Present front, v: " << newV << " safe dist to keep: " << bestSafeDistance << " distance to travel: " << bestDistance
-                    << " target v: " << bestFrontV << " accel: " << MpS2MpH(frontAccel) << endl;
-#endif
-        }
-        else if (backAccel > -1000000 + EPSILON) {
-            result = backAccel;
-#ifdef DEBUG_OUT
-            cout << "Prevent back, v: " << newV << " safe dist to keep: " << bestSafeDistance << " distance to travel: " << bestDistance
-                    << " target v: " << bestBackV << " accel: " << MpS2MpH(backAccel) << endl;
-#endif
-        }
-        return result;
+        acel = max(acel, Config::maxDeceleration);
     }
+    return [acel](double t)->double {return acel;};
 }
 
 vector<Vehicle*> Navigator::findVehicleOnCollisionCourse(vector<Vehicle> &fusion, int lane, double t, double safeRange) {
@@ -381,35 +464,40 @@ vector<Vehicle*> Navigator::findVehicleOnCollisionCourse(vector<Vehicle> &fusion
     double otherVehicleTime = Config::N * Config::dt;
     for (Vehicle &car: fusion) {
 #ifdef VERBOSE_OUT
-        cout << "Check vehicle - s " << car.s << " v " << MpS2MpH(car.v) << " d: " << car.d << " vs: " << car.vs << " vd: " << car.vd
+        cout << "Check vehicle - s " << car.s << " v " << car.v << " d: " << car.d << " vs: " << car.vs << " vd: " << car.vd
                 << " furute: s: " << car.sAfter(otherVehicleTime) << " furute: d: " << car.dAfter(otherVehicleTime) << endl;
 #endif
         // Assume the vehicle can not cross multiple lanes in the horizon, should be fine unless the horizon is too big
-        if (vehicle->onSameLane(Road::getCurrentRoad().laneToCenterD(lane), car.dAfter(otherVehicleTime), car) ||
+        if (vehicle->onSameLane(vehicle->dAfter(t), car.dAfter(otherVehicleTime), car) ||
             vehicle->onSameLane(vehicle->d, car.d, car)) { // accept the situations that other vehicle may or may not change lane
-            if (vehicle->hasCollision(car)) {
+            Vehicle temp = *vehicle;
+            if (predictions.size() > 0) {
+                temp.s = predictions[0][3]; // use the current position to avoid early death
+            }
+            if (vehicle->hasCollision(car) && temp.hasCollision(car)) {
                 collisions.push_back(&car);
                 state = NavigationState::COLLIIDED;
-#ifdef DEBUG_OUT
-                cout << "Collision detected - x " << car.x << " y " << car.y << " s " << car.s << " d: " << car.d << " v " << MpS2MpH(car.v) 
-                    << " vs: " << car.vs << " vd: " << car.vd << endl;
+#ifdef ERROR_OUT
+                cout << "Collision detected - x " << car.x << " y " << car.y << " s: " << car.s << " d: " << car.d << " v: " << car.v 
+                    << " vs: " << car.vs << " vd: " << car.vd << " vehicle s: " << vehicle->s << ", " << temp.s << " vehicle d: " << vehicle->d
+                    << " vehicle V: " << vehicle->v << " length: " << max(vehicle->len, car.len) << endl;
 #endif
-                continue;
+                return collisions; // no need to continue
             }
             double tempS = car.sAfter(otherVehicleTime);
             double dist = Road::getCurrentRoad().distanceS(tempS, nextS);
             if (dist > -(safeRange + vehicle->len) && dist < (safeRange + car.len)) {
                 collisions.push_back(&car);
 #ifdef DEBUG_OUT
-                cout << "Collision course ahead - x " << car.x << " y " << car.y << " s " << car.s << " d: " << car.d << " v " << MpS2MpH(car.v) 
-                    << " vs: " << car.vs << " vd: " << car.vd << " Future dist " << Road::getCurrentRoad().normalizeS(dist) << endl;
+                cout << "Collision course ahead - x " << car.x << " y " << car.y << " s " << car.s << " d: " << car.d << " v " << car.v
+                    << " vs: " << car.vs << " vd: " << car.vd << " Future dist " << dist << endl;
 #endif
             }
             else if (dist > -(safeRange + car.len) && dist < (safeRange + vehicle->len)) {
                 collisions.push_back(&car);
 #ifdef DEBUG_OUT
-                cout << "Collision course behind - x " << car.x << " y " << car.y << " s " << car.s << " d: " << car.d << " v " << MpS2MpH(car.v) << " Future "
-                        << Road::getCurrentRoad().normalizeS(dist) << endl;
+                cout << "Collision course behind - x " << car.x << " y " << car.y << " s " << car.s << " d: " << car.d << " v " << car.v << " Future "
+                        << dist << endl;
 #endif
             }
 #ifdef DEBUG_OUT
@@ -446,7 +534,7 @@ Vehicle* Navigator::getVehicleBehindAt(vector<Vehicle> &fusion, int lane, double
     
 #ifdef DEBUG_OUT
     if (vehicle != NULL) {
-        cout << "Found behind - x " << vehicle->x << " y " << vehicle->y << " s " << vehicle->s << " v " << MpS2MpH(vehicle->v) << " Future "
+        cout << "Found behind - x " << vehicle->x << " y " << vehicle->y << " s " << vehicle->s << " v " << vehicle->v << " Future "
                 << Road::getCurrentRoad().normalizeS(nextS - minDist) << endl;
     }
 #endif
@@ -482,11 +570,18 @@ Vehicle* Navigator::getVehicleAheadAt(vector<Vehicle> &fusion, int lane, double 
     return vehicle;
 }
 
-void Navigator::sortVehicle(vector<Vehicle> vehicles) {
-    for (auto car: vehicles) {
-        car.distanceToTarget = Road::getCurrentRoad().distanceS(car.s, vehicle->s);
+void Navigator::orderedInsert(vector<Vehicle> &vehicles, Vehicle &car) {
+    car.distanceToTarget = Road::getCurrentRoad().distanceS(car.s, vehicle->s);
+    if (vehicles.size() == 0) {
+        vehicles.push_back(car);
     }
-    sort(vehicles.begin(), vehicles.end(), [](Vehicle &l, Vehicle &r) {
-        return l.distanceToTarget > r.distanceToTarget;
-    });
+    else {
+        for (unsigned i = 0; i < vehicles.size(); i++) {
+            if (vehicles[i].distanceToTarget < car.distanceToTarget) {
+                vehicles.insert(vehicles.begin() + i, car);
+                return;
+            }
+        }
+        vehicles.push_back(car);
+    }
 }

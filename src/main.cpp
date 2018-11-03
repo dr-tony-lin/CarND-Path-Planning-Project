@@ -135,13 +135,13 @@ int main()
               }
 
 #ifdef DEBUG_OUT
-              std::cout << "Current: x: " << car_x << " y: " << car_y << " s: " << car_s << " d: " << car_d <<  " v: " << car_speed << " yaw: "  << car_yaw << std::endl;
+              std::cout << "Current: x: " << car_x << " y: " << car_y << " s: " << car_s << " d: " << car_d <<  " v: " << MpH2MpS(car_speed) << " yaw: "  << car_yaw << std::endl;
               
               cout <<  "Vehicle prediction start: x: " << navigator.getVehicle()->x << " y: " << navigator.getVehicle()->y << " s: " << navigator.getVehicle()->s << " d: " << navigator.getVehicle()->d
                    << " v: " << MpS2MpH(navigator.getVehicle()->v) << " vs: " << MpS2MpH(navigator.getVehicle()->vs) << " vd: " << MpS2MpH(navigator.getVehicle()->vd) << " a: " 
                    << MpS2MpH(navigator.getVehicle()->a)  << std::endl;
 #endif
-              std::vector<std::vector<double>> next_trjectory = navigator.generateTrajectory(fusion);
+              std::vector<std::vector<double>> next_trjectory = navigator.navigate(fusion);
               
               json msgJson;
 
