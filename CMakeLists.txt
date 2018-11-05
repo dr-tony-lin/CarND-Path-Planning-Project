@@ -3,7 +3,7 @@ project(Path_Planning)
 cmake_minimum_required (VERSION 3.5)
 # -g allows for gdb debugging
 # turn on -03 for best performance
-add_definitions(-std=c++11 -g -O3)
+add_definitions(-std=c++11 -g)
 
 if (VERBOSE_OUT)
     add_definitions(-DVERBOSE_OUT=1 -DDEBUG_OUT=1 -DINFO_OUT=1 -DERROR_OUT=1)

@@ -3,7 +3,7 @@
 #include "utils.h"
 #include "Config.hpp"
 
-size_t Config::N = 10;
+size_t Config::N = 5;
 double Config::dt = 0.02;
 size_t pastTrajectoryLength = (size_t) (1.0 / Config::dt);
 int Config::maxFitOrder = 4;
@@ -51,26 +51,26 @@ int Config::numberOfLanes = 3;
 int Config::targetLane = 1;
 double Config::minSafeDistance = 15.0;
 double Config::minLaneChangeSpeedGain = MpH2MpS(1.5);
-double Config::minLaneChangeTime = 2.0;
-double Config::minLaneChangeFrontDistance = 20.0;
+double Config::minLaneChangeTime = 3.0;
+double Config::minLaneChangeFrontDistance = 18.0;
 double Config::minLaneChangeBackDistance = 10.0;
 double Config::maxLaneChangeDistance = 60;
-double Config::maxAccelerationTime = 8.0;
+double Config::maxAccelerationTime = 6.0;
 double Config::maxDistance = 100.0;// should be a function of current speed
 double Config::minSafeGap = 0.3;
-double Config::maxAcceleration = MpH2MpS(15);
-double Config::maxJerk = MpH2MpS(15);
+double Config::maxAcceleration = MpH2MpS(10);
+double Config::maxJerk = MpH2MpS(10);
 double Config::maxDeceleration = MpH2MpS(-30);
 // The simulator use a different approach for the road trajectory than our spline approach
 // They will result in slight difference in speed calculation, we need some margin to accommodate the differences
-double Config::maxSpeed = MpH2MpS(90);
+double Config::maxSpeed = MpH2MpS(75);
 double Config::Lf = 2.67;
 
 // COst function weights
 double Config::safetyCostWeight = 3.0; // safety is the most important
 double Config::speedCostWeight = 1.5; // faster is better
 double Config::offTargetLaneCostWeight = 0.2; // prefer to go back to the target
-double Config::changetLaneCostWeight = 0.5; // just for tie breaking
+double Config::changetLaneCostWeight = 0.2; // just for tie breaking
 double Config::laneTrafficCostWeight = 1.5; // prefer no traffic
 double Config::laneFrontTrafficCostWeight = 0.95; // front is important
 double Config::laneRearTrafficCostWeight = 0.05; // rear is less

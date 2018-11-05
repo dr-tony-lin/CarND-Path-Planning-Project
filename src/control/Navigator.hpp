@@ -25,13 +25,15 @@ protected:
   Vehicle *vehicle = NULL;
   NavigationState state = NavigationState::KL;
   StateTransition *currentTransition = NULL;
+  vector<Vehicle*> *laneFusion = NULL;
+  vector<Vehicle> vehicles;
   CostEvaluator cost;
   long long lastLaneChangeTime;
 
   /**
    * Generate trajectory to the target lane
    */ 
-  std::vector<std::vector<double>> generateTrajectory(const vector<Vehicle> &fusion, const double laneChangeDistance);
+  std::vector<std::vector<double>> generateTrajectory(const double laneChangeDistance);
 
   /**
    * Find the acceleration for the transition
@@ -40,11 +42,10 @@ protected:
 
   /**
    * Find vehicles on collision course
-   * @param fusion the sensor fusion data of other vehicle in the same side of the road
    * @param lane the target lane
    * @param t the time in the future to predict
    */ 
-  std::vector<Vehicle*> findVehicleOnCollisionCourse(vector<Vehicle> &fusion, int lane, double t, double safeRange=5);
+  std::vector<Vehicle*> findVehicleOnCollisionCourse(int lane, double t, double safeRange=5);
 
   /**
    * Find the vehicle in front of the vehicle
@@ -52,7 +53,7 @@ protected:
    * @param lane the target lane
    * @param t the time in the future to predict
    */ 
-  Vehicle* getVehicleBehindAt(vector<Vehicle> &fusion, int lane, double t);
+  Vehicle* getVehicleBehindAt(int lane, double t);
 
   /**
    * Find the vehicle in front of the vehicle
@@ -60,21 +61,21 @@ protected:
    * @param lane the target lane
    * @param t the time in the future to predict
    */ 
-  Vehicle* getVehicleAheadAt(vector<Vehicle> &fusion, int lane, double t);
+  Vehicle* getVehicleAheadAt(int lane, double t);
 
   /**
    * Find the vehicle in front of the vehicle
    * @param fusion the sensor fusion data of other vehicle in the same side of the road
    * @param currentLane the current lane
    */ 
- vector<StateTransition> getLaneStateTransitions(vector<Vehicle> &fusion, int currentLane, double t);
+ void getLaneStateTransitions(vector<StateTransition> &transitions, int currentLane, double t);
 
- void getLaneStateTransition(vector<StateTransition> &transitions, vector<Vehicle> &fusion, const int currentLane, const int laneChange);
+ void getLaneStateTransition(vector<StateTransition> &transitions, const int targetLane, const int currentLane, const int laneChange);
   
 /**
  * Order insert vehicle according to their distance from the controlled vehicle
  */ 
-void orderedInsert(vector<Vehicle> &vehicles, Vehicle &v);
+void orderedInsert(vector<Vehicle *> &vehicles, Vehicle *v);
 
 public:
   std::deque<std::vector<double>> predictions;
@@ -118,6 +119,9 @@ public:
 
   virtual ~Navigator() {
     delete vehicle;
+    delete laneFusion;
+    delete currentTransition;
+    vehicles.clear();
   }
 };
 

@@ -20,6 +20,7 @@ class Vehicle {
 
   friend class Navigator;
 public:
+  int id = -1;
   double x;
   double y;
   double dx;
@@ -167,7 +168,7 @@ bool onSameLane(const double my_d, const double another_d, const Vehicle &anothe
    * Get the s coordinate after t seconds
    */ 
   double sAfter(const double s, const double vs, const double as, const double t) {
-    return Road::getCurrentRoad().normalizeS(s + vs*t + 0.5*as*t*t);
+    return Road::current().normalizeS(s + vs*t + 0.5*as*t*t);
   }
 
   /**
@@ -181,7 +182,7 @@ bool onSameLane(const double my_d, const double another_d, const Vehicle &anothe
    * Return the velocity after time t
    */ 
   double vAfter(const double v, const double a, const double t) {
-    return min(v + a * t, Road::getCurrentRoad().getSpeedLimit());
+    return min(v + a * t, Road::current().getSpeedLimit());
   }
 
   /**

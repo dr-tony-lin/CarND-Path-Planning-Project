@@ -63,7 +63,7 @@ public:
     /**
      * Get the current road the car is driving
      */ 
-    static Road& getCurrentRoad() {
+    static Road& current() {
         return *currentRoad;
     }
 
@@ -71,7 +71,12 @@ public:
      * Return the number of lanes the road has at s
      * @param s the location
      */ 
-    int getNumberOfLanes(const double s) { return lanes;};
+    int getNumberOfLanesAt(const double s) { return lanes;};
+
+    /**
+     * Return the maximum number of lanes
+     */ 
+    int numberOfLanes() { return lanes;};
 
     /**
      * Return the speed limit
