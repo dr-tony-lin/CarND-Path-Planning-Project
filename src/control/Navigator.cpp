@@ -18,6 +18,10 @@ long long time_since_epoch() {
 
 void Navigator::initializeVehicle(const double x, const double y, const double s, const double d,
                         const double yaw, const double v, const double LF, const double maxAccel) {              
+    if (vehicle != NULL) {
+        delete vehicle;
+    }
+
     vehicle = new Vehicle(x, y, s, d, yaw, v);
     vehicle->setLength(LF);
     vehicle->maxAcceleration = maxAccel;
@@ -35,8 +39,8 @@ void Navigator::initializeVehicle(const double x, const double y, const double s
     laneFusion = new vector<Vehicle*>[Road::current().numberOfLanes()];
 }
 
-void Navigator::update(const vector<double>& previous_x, const vector<double>& previous_y) {
-    if (vehicle != NULL) {
+void Navigator::update(vector<Vehicle> &vehicles, const vector<double>& previous_x, const vector<double>& previous_y) {
+    if (predictions.size() > 0) {
         vehicle->x = predictions.back()[1];
         vehicle->y = predictions.back()[2];
         vehicle->s = predictions.back()[3];
@@ -55,24 +59,6 @@ void Navigator::update(const vector<double>& previous_x, const vector<double>& p
             predictions.pop_front();
         }
     }
-}
-
-vector<vector<double>> Navigator::navigate(vector<Vehicle> &vehicles) {
-    if (currentTransition != NULL && currentTransition->target != NavigationState::KL) {
-        if (//Road::current().distanceS(currentTransition->targetS, vehicle->s) < 0.1 ||
-            fabs(vehicle->d - Road::current().laneToCenterD(currentTransition->immediateLane)) < 0.01) { // we have reached the goal
-#ifdef INFO_OUT
-        cout << "Transition ended: " << currentTransition->current << "  to " << currentTransition->target << " lane: " << currentTransition->immediateLane
-            << " min speed ahead: " << currentTransition->limits.minSpeedAhead << " max speed behind:" << currentTransition->limits.maxSpeedBehind << " dist ahead: " << currentTransition->limits.distanceAhead
-            << " dist behind: " << currentTransition->limits.distanceAhead << " current d: " << vehicle->d << endl;
-#endif
-            state = NavigationState::KL;
-            delete currentTransition;
-            currentTransition = NULL;
-            lastLaneChangeTime = time_since_epoch();
-        }
-    }
-
     if (laneFusion != NULL) { // Clear previous fusion data
         for (int i = 0; i < Road::current().numberOfLanes(); i++) {
             laneFusion[i].clear();
@@ -95,6 +81,23 @@ vector<vector<double>> Navigator::navigate(vector<Vehicle> &vehicles) {
         int vehicleLaneRight = min(Road::current().dToLane(v.d + v.width * 0.5), Road::current().numberOfLanes());
         for (int lane = vehicleLaneLeft; lane <= vehicleLaneRight; lane++) { 
             orderedInsert(laneFusion[lane], &v);
+        }
+    }
+}
+
+vector<vector<double>> Navigator::navigate() {
+    if (currentTransition != NULL && currentTransition->target != NavigationState::KL) {
+        if (//Road::current().distanceS(currentTransition->targetS, vehicle->s) < 0.1 ||
+            fabs(vehicle->d - Road::current().laneToCenterD(currentTransition->immediateLane)) < 0.01) { // we have reached the goal
+#ifdef INFO_OUT
+        cout << "Transition ended: " << currentTransition->current << "  to " << currentTransition->target << " lane: " << currentTransition->immediateLane
+            << " min speed ahead: " << currentTransition->limits.minSpeedAhead << " max speed behind:" << currentTransition->limits.maxSpeedBehind << " dist ahead: " << currentTransition->limits.distanceAhead
+            << " dist behind: " << currentTransition->limits.distanceAhead << " current d: " << vehicle->d << endl;
+#endif
+            state = NavigationState::KL;
+            delete currentTransition;
+            currentTransition = NULL;
+            lastLaneChangeTime = time_since_epoch();
         }
     }
 

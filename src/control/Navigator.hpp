@@ -109,13 +109,13 @@ public:
   /**
    * Update the left over trajectory
    */ 
-  void update(const std::vector<double>& previous_x, const std::vector<double>& previous_y);
+  void update(vector<Vehicle> &fusion, const std::vector<double>& previous_x, const std::vector<double>& previous_y);
 
   /**
    * Navigate the vehicle and generate trajectory
    * @param fusion the sensor fusion data of other vehicle in the same side of the road
    */
-  vector<vector<double>> navigate(vector<Vehicle> &fusion);
+  vector<vector<double>> navigate();
 
   virtual ~Navigator() {
     delete vehicle;

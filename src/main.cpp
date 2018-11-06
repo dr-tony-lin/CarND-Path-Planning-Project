@@ -126,13 +126,12 @@ int main()
                 fusion.push_back(tmp);
               }
 
-              if (navigator.isVehicleInitialized()) {
-                navigator.update(previous_path_x, previous_path_y);
-              }
-              else {
+              if (!navigator.isVehicleInitialized()) {
                 std::cout << "Initialize vehicle" << std::endl;
                 navigator.initializeVehicle(car_x, car_y, car_s, car_d, car_yaw, car_speed);
               }
+              
+              navigator.update(fusion, previous_path_x, previous_path_y);
 
 #ifdef DEBUG_OUT
               std::cout << "Current: x: " << car_x << " y: " << car_y << " s: " << car_s << " d: " << car_d <<  " v: " << MpH2MpS(car_speed) << " yaw: "  << car_yaw << std::endl;
@@ -141,7 +140,7 @@ int main()
                    << " v: " << MpS2MpH(navigator.getVehicle()->v) << " vs: " << MpS2MpH(navigator.getVehicle()->vs) << " vd: " << MpS2MpH(navigator.getVehicle()->vd) << " a: " 
                    << MpS2MpH(navigator.getVehicle()->a)  << std::endl;
 #endif
-              std::vector<std::vector<double>> next_trjectory = navigator.navigate(fusion);
+              std::vector<std::vector<double>> next_trjectory = navigator.navigate();
               
               json msgJson;
 

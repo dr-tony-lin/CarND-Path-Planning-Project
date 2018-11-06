@@ -9,8 +9,8 @@
 
 using namespace std;
 
-std::vector<double> changeTrajectoryX = {0.0, 0.05,  0.1, 0.5,   0.9, 0.95, 1.0};
-std::vector<double> changeTrajectoryY = {0.0, 0.0,  0.01, 0.5,  0.99,  1.0, 1.0};
+std::vector<double> changeTrajectoryX = {0.0, 0.05,  0.4, 0.95, 1.0};
+std::vector<double> changeTrajectoryY = {0.0,  0.0,  0.5,  1.0, 1.0};
 bool Vehicle::initialized = false;
 tk::spline Vehicle::changeTrajectory;
 
