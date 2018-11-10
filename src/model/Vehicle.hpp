@@ -40,6 +40,8 @@ public:
   int Lf = Config::Lf;
   int len = Config::Lf * 1.5;
   double maxAcceleration = Config::maxAcceleration;
+  int laneLeft;
+  int laneRight;
 
   Vehicle() {
     if (!initialized) {
@@ -50,12 +52,13 @@ public:
   /**
    * Constructor, takes a vector of: id, x, y, vx, vy, s, d
    */ 
-  Vehicle(const std::vector<double> &data);
+  Vehicle(const std::vector<double> &data, const double width = 2);
 
   /**
    * Constructor
    */ 
-  Vehicle(const double x, const double y, const double s, const double d, const double yaw, const double v);
+  Vehicle(const double x, const double y, const double s, const double d, const double yaw = 0, const double v = 0,
+          const double width = 2);
 
   /**
    * Assignment operator

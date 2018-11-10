@@ -92,9 +92,7 @@ public:
      * Return the lane given d coordinate
      * @param d the d coordinate
      */
-    int dToLane(const double d) {
-        return int(d / laneWidth);
-    }
+    int dToLane(const double d);
 
     /**
      * Return the lane center's d coordinate

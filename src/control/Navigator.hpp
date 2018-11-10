@@ -24,9 +24,10 @@ class Navigator {
 protected:
   Vehicle *vehicle = NULL;
   NavigationState state = NavigationState::KL;
-  StateTransition *currentTransition = NULL;
-  vector<Vehicle*> *laneFusion = NULL;
+  StateTransition *currentTransition;
   vector<Vehicle> vehicles;
+  vector<Vehicle*> *laneFusion = NULL;
+  Limits *laneLimits = NULL;
   CostEvaluator cost;
   long long lastLaneChangeTime;
 
@@ -63,19 +64,22 @@ protected:
    */ 
   Vehicle* getVehicleAheadAt(int lane, double t);
 
+  void getLaneLimits(vector<Vehicle *> &fusion, Limits &limit);
+
   /**
    * Find the vehicle in front of the vehicle
    * @param fusion the sensor fusion data of other vehicle in the same side of the road
    * @param currentLane the current lane
    */ 
- void getLaneStateTransitions(vector<StateTransition> &transitions, int currentLane, double t);
+  void getLaneStateTransitions(vector<StateTransition> &transitions, double t);
 
- void getLaneStateTransition(vector<StateTransition> &transitions, const int targetLane, const int currentLane, const int laneChange);
-  
-/**
- * Order insert vehicle according to their distance from the controlled vehicle
- */ 
-void orderedInsert(vector<Vehicle *> &vehicles, Vehicle *v);
+  StateTransition getStateTransitionToLane(const int fromLane, const int toLane);
+  StateTransition *updateLaneStateTransition(StateTransition &transition);
+
+  /**
+  * Order insert vehicle according to their distance from the controlled vehicle
+  */ 
+  void orderedInsert(vector<Vehicle *> &vehicles, Vehicle *v);
 
 public:
   std::deque<std::vector<double>> predictions;
@@ -118,9 +122,22 @@ public:
   vector<vector<double>> navigate();
 
   virtual ~Navigator() {
-    delete vehicle;
-    delete laneFusion;
-    delete currentTransition;
+    if (currentTransition != NULL) {
+      delete currentTransition;
+      currentTransition = NULL;
+    }
+    if (vehicle != NULL) {
+      delete vehicle;
+      vehicle = NULL;
+    }
+    if (laneFusion != NULL) {
+      delete laneFusion;
+      laneFusion = NULL;
+    }
+    if (laneLimits != NULL) {
+      delete laneLimits;
+      laneLimits = NULL;
+    }
     vehicles.clear();
   }
 };

@@ -16,17 +16,22 @@ struct Limits {
     double maxSpeedBehind = 0;
     double distanceAhead = 0;
     double distanceBehind = 0;
+    int nVehicleAhead;
+    int nVehicleBehind;
 
     Limits() {}
     
-    Limits(const double minVAhead, const double maxVBehind, const double dAhead, const double dBehind):
-         minSpeedAhead(minVAhead), maxSpeedBehind(maxVBehind), distanceAhead(dAhead), distanceBehind(dBehind) {}
+    Limits(const double minVAhead, const double maxVBehind, const double dAhead, const double dBehind,
+            const int nVehAhead, const int nVehBehind): minSpeedAhead(minVAhead), maxSpeedBehind(maxVBehind),
+            distanceAhead(dAhead), distanceBehind(dBehind), nVehicleAhead(nVehAhead), nVehicleBehind(nVehBehind) {}
 
     Limits(const Limits &another) {
         minSpeedAhead = another.minSpeedAhead;
         maxSpeedBehind = another.maxSpeedBehind;
         distanceAhead = another.distanceAhead;
         distanceBehind = another.distanceBehind;
+        nVehicleAhead = another.nVehicleAhead;
+        nVehicleBehind = another.nVehicleBehind;
     }
 
     Limits& operator=(const Limits& another) {
@@ -34,6 +39,8 @@ struct Limits {
         maxSpeedBehind = another.maxSpeedBehind;
         distanceAhead = another.distanceAhead;
         distanceBehind = another.distanceBehind;
+        nVehicleAhead = another.nVehicleAhead;
+        nVehicleBehind = another.nVehicleBehind;
     }
 };
 
@@ -49,8 +56,9 @@ struct StateTransition {
     double startD = 0;
     Limits limits;
     Limits previousLimits;
-    int nVehicleAhead;
-    int nVehicleBehind;
+
+    StateTransition() {
+    }
 
     StateTransition(const StateTransition &another) {
         current = another.current;
@@ -63,8 +71,6 @@ struct StateTransition {
         startD = another.startD;
         limits = another.limits;
         previousLimits = another.previousLimits;
-        nVehicleAhead = another.nVehicleAhead;
-        nVehicleBehind = another.nVehicleBehind;
     }
 
     StateTransition& operator=(const StateTransition &another) {
@@ -78,15 +84,27 @@ struct StateTransition {
         startD = another.startD;
         limits = another.limits;
         previousLimits = another.previousLimits;
-        nVehicleAhead = another.nVehicleAhead;
-        nVehicleBehind = another.nVehicleBehind;
     }
 
     StateTransition(const NavigationState from, const NavigationState to, const int source, const int immediate,
                     const double minVAhead, const double maxVBehind, const double dAhead, const double dBehind,
                     const int nVehAhead, const int nVehBehind): 
                             current(from), target(to), sourceLane(source), immediateLane(immediate), 
-                            limits(minVAhead,maxVBehind,dAhead,dBehind), previousLimits(minVAhead,maxVBehind,dAhead,dBehind),
-                            nVehicleAhead(nVehAhead), nVehicleBehind(nVehBehind), targetLane(Config::targetLane) {};
+                            limits(minVAhead, maxVBehind, dAhead, dBehind, nVehAhead, nVehBehind), 
+                            previousLimits(minVAhead, maxVBehind, dAhead, dBehind, nVehAhead, nVehBehind),
+                            targetLane(Config::targetLane) {};
+    
+    StateTransition(const NavigationState from, const NavigationState to, const int source, const int immediate,
+                    const Limits curLimits): 
+                            current(from), target(to), sourceLane(source), immediateLane(immediate), 
+                            limits(curLimits), previousLimits(curLimits),
+                            targetLane(Config::targetLane) {};
+
+    
+    StateTransition(const NavigationState from, const NavigationState to, const int source, const int immediate,
+                    const Limits curLimits, const Limits prevLimits): 
+                            current(from), target(to), sourceLane(source), immediateLane(immediate), 
+                            limits(curLimits), previousLimits(prevLimits),
+                            targetLane(Config::targetLane) {};
 };
 #endif

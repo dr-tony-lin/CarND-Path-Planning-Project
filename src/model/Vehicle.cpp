@@ -9,8 +9,8 @@
 
 using namespace std;
 
-std::vector<double> changeTrajectoryX = {0.0, 0.05,  0.4, 0.95, 1.0};
-std::vector<double> changeTrajectoryY = {0.0,  0.0,  0.5,  1.0, 1.0};
+std::vector<double> changeTrajectoryX = {0.0, 0.05, 0.45, 0.95, 1.0};
+std::vector<double> changeTrajectoryY = {0.0, 0.00, 0.50, 1.00, 1.0};
 bool Vehicle::initialized = false;
 tk::spline Vehicle::changeTrajectory;
 
@@ -19,8 +19,8 @@ void Vehicle::initialize() {
   initialized = true;
 }
 
-Vehicle::Vehicle(const vector<double> &data): id(int(data[0])), x(data[1]), y(data[2]), s(data[5]), d(data[6]), 
-                    v(length(data[3], data[4])) {
+Vehicle::Vehicle(const vector<double> &data, const double _width): id(int(data[0])), x(data[1]), y(data[2]),
+                    s(data[5]), d(data[6]), v(length(data[3], data[4])), width(_width) {
   if (!initialized) {
     initialize();
   }
@@ -34,8 +34,9 @@ Vehicle::Vehicle(const vector<double> &data): id(int(data[0])), x(data[1]), y(da
   initFrenet();
 }
 
-Vehicle::Vehicle(const double _x, const double _y, const double _s, const double _d, const double yaw, const double _v): 
-          x(_x), y(_y), s(_s), d(_d), v(min(MpH2MpS(_v), Road::current().getSpeedLimit())) {
+Vehicle::Vehicle(const double _x, const double _y, const double _s, const double _d, const double yaw,
+                 const double _v, const double _width): 
+          x(_x), y(_y), s(_s), d(_d), v(min(MpH2MpS(_v), Road::current().getSpeedLimit())), width(_width) {
   if (!initialized) {
     initialize();
   }
@@ -43,6 +44,8 @@ Vehicle::Vehicle(const double _x, const double _y, const double _s, const double
   dx = cos(rad);
   dy = sin(rad);
   initFrenet();
+  laneLeft = Road::current().dToLane(d - width * 0.5);
+  laneRight = Road::current().dToLane(d + width * 0.5);
 }
 
 Vehicle::Vehicle(const Vehicle &another) {
@@ -65,6 +68,8 @@ Vehicle::Vehicle(const Vehicle &another) {
     Lf = another.Lf;
     maxAcceleration = another.maxAcceleration;
     distanceToTarget = another.distanceToTarget;
+    laneLeft = another.laneLeft;
+    laneRight = another.laneRight;
 }
 
 Vehicle & Vehicle::operator=(const Vehicle &another) {
@@ -87,6 +92,8 @@ Vehicle & Vehicle::operator=(const Vehicle &another) {
     Lf = another.Lf;
     maxAcceleration = another.maxAcceleration;
     distanceToTarget = another.distanceToTarget;
+    laneLeft = another.laneLeft;
+    laneRight = another.laneRight;
 }
 
 void Vehicle::initFrenet() {
@@ -125,7 +132,8 @@ vector<vector<double>> Vehicle::generatePredictions(double s, double d, double v
   double next_v = v;
   for (int i = 1; i <= horizon; i++) {
     double t = i * Config::dt;
-    double aa = a + acelFunc(t);
+    double accel = acelFunc(t);
+    double aa = a + accel;
     if (aa >= 0) {
       aa = min(Config::maxJerk, aa);
     }
@@ -146,7 +154,7 @@ vector<vector<double>> Vehicle::generatePredictions(double s, double d, double v
     vector<double> xy = Road::current().getXY(next_s, next_d);
     predictions.push_back({lane, xy[0], xy[1], next_s, next_d, next_v, aa});
   #ifdef DEBUG_OUT
-    cout << "Trajectory t: " << t << " a: " << a << " s: " << next_s << " v: " << next_v << " d: " << next_d << endl;
+    cout << "Trajectory t: " << t << " a: " << a << " s: " << next_s << " v: " << next_v << " d: " << next_d << " accel: " << accel << endl;
   #endif
   }
   return predictions;

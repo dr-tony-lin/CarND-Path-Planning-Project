@@ -3,7 +3,7 @@
 #include "utils.h"
 #include "Config.hpp"
 
-size_t Config::N = 5;
+size_t Config::N = 8;
 double Config::dt = 0.02;
 size_t pastTrajectoryLength = (size_t) (1.0 / Config::dt);
 int Config::maxFitOrder = 4;
@@ -52,7 +52,7 @@ int Config::targetLane = 1;
 double Config::minSafeDistance = 15.0;
 double Config::minLaneChangeSpeedGain = MpH2MpS(1.5);
 double Config::minLaneChangeTime = 3.0;
-double Config::minLaneChangeFrontDistance = 18.0;
+double Config::minLaneChangeFrontDistance = 15.0;
 double Config::minLaneChangeBackDistance = 10.0;
 double Config::maxLaneChangeDistance = 60;
 double Config::maxAccelerationTime = 6.0;

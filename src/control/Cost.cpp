@@ -54,8 +54,8 @@ class LaneTrafficCost: public Cost {
 public:
     LaneTrafficCost() {};
     double operator()(Vehicle &vehicle, StateTransition &transition) const {
-        return Config::laneFrontTrafficCostWeight * (sigmoid(transition.nVehicleAhead) - 0.5) +
-                Config::laneRearTrafficCostWeight * (sigmoid(transition.nVehicleBehind) - 0.5);
+        return Config::laneFrontTrafficCostWeight * (sigmoid(transition.limits.nVehicleAhead) - 0.5) +
+                Config::laneRearTrafficCostWeight * (sigmoid(transition.limits.nVehicleBehind) - 0.5);
     }
 };
 

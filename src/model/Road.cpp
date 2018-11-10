@@ -1,4 +1,5 @@
 #include "Road.hpp"
+#include <cmath>
 #include "../utils/utils.h"
 
 using namespace std;
@@ -48,6 +49,10 @@ unsigned int Road::ClosestWaypoint(const double x, const double y) {
     }
 
     return closestWaypoint;
+}
+
+int Road::dToLane(const double d) {
+    return min(max(0, int(d / laneWidth)), lanes - 1);
 }
 
 int Road::NextWaypoint(double x, double y, double theta) {
