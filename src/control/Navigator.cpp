@@ -39,6 +39,7 @@ void Navigator::initializeVehicle(const double x, const double y, const double s
     
     laneFusion = new vector<Vehicle*>[Road::current().numberOfLanes()];
     laneLimits  = new Limits[Road::current().numberOfLanes()];
+    currentTransition = NULL;
 }
 
 void Navigator::update(vector<Vehicle> &vehicles, const vector<double>& previous_x, const vector<double>& previous_y) {
@@ -90,13 +91,13 @@ void Navigator::update(vector<Vehicle> &vehicles, const vector<double>& previous
 
     for (int i = 0; i < Road::current().numberOfLanes(); i++) {
         getLaneLimits(laneFusion[i], laneLimits[i]);
+        cost(*vehicle, i, laneLimits[i]);
     }
 }
 
 vector<vector<double>> Navigator::navigate() {
     if (currentTransition != NULL && currentTransition->target != NavigationState::KL) {
-        if (//Road::current().distanceS(currentTransition->targetS, vehicle->s) < 0.1 ||
-            fabs(vehicle->d - Road::current().laneToCenterD(currentTransition->immediateLane)) < 0.01) { // we have reached the goal
+        if (fabs(vehicle->d - Road::current().laneToCenterD(currentTransition->immediateLane)) < 0.01) { // we have reached the goal
 #ifdef INFO_OUT
         cout << "Transition ended: " << currentTransition->current << "  to " << currentTransition->target << " lane: " << currentTransition->immediateLane
             << " min speed ahead: " << currentTransition->limits.minSpeedAhead << " max speed behind:" << currentTransition->limits.maxSpeedBehind 
@@ -120,14 +121,27 @@ vector<vector<double>> Navigator::navigate() {
     double klCost = 1e16;
 
     for (auto it = transitions.begin(); it != transitions.end(); it++) {
-        double c = cost(*vehicle, *it);
+        double c = laneLimits[it->immediateLane].cost;
         if (it->target == NavigationState::KL) {
             klCost = c;
             kl = &*it;
         }
-        if (c < minCost) {
-            minCost = c;
-            transition = &*it;
+        else {
+            if (vehicle->laneLeft < it->immediateLane || vehicle->laneRight < it->immediateLane) { // moving right
+                for (int shift = 0, i = it->immediateLane + 1; i < Road::current().getNumberOfLanesAt(vehicle->s); i++, shift++) {
+                    c = min(c, c * Config::laneCostWeights[shift] + laneLimits[i].cost * (1 - Config::laneCostWeights[shift]));
+                }
+            }
+            else if (vehicle->laneLeft > it->immediateLane || vehicle->laneRight > it->immediateLane) {  // moving left
+                for (int shift = 0, i = it->immediateLane - 1; i >= 0; i--, shift++) {
+                    c = min(c, c * Config::laneCostWeights[shift] + laneLimits[i].cost * (1 - Config::laneCostWeights[shift]));
+                }
+            }
+
+            if (c < minCost) {
+                minCost = c;
+                transition = &*it;
+            }
         }
 #ifdef DEBUG_OUT
         StateTransition &t = *it;
@@ -137,33 +151,34 @@ vector<vector<double>> Navigator::navigate() {
 #endif
     }
 
-    if (transition != kl && klCost - minCost< 0.05) { // the cost difference is too small, avoid prematurely lane change
+    if (transition != kl && klCost - minCost < Config::minLaneChangeCostGain) { // the cost difference is too small, avoid prematurely lane change
         transition = kl; 
     }
 
     // Compute lane change distance if it is to take place
     double laneChangeDistance = Config::maxLaneChangeDistance;
     if (transition != NULL) {
-        if (currentTransition != NULL) {
-            laneChangeDistance = min(Config::maxLaneChangeDistance, min(transition->previousLimits.distanceAhead, transition->limits.distanceAhead));
-            delete currentTransition;
+        if (currentTransition != NULL && currentTransition->target == transition->target) {
+            transition->targetS = currentTransition->targetS;
         }
         else {
-            laneChangeDistance = min(Config::maxLaneChangeDistance, transition->limits.distanceAhead);
+            Limits &sourceLimit = transition->previousLimits;
+            laneChangeDistance = min(min(Config::maxLaneChangeDistance, transition->limits.distanceAhead), sourceLimit.distanceAhead);
+            laneChangeDistance += min(min(transition->limits.minSpeedAhead, transition->limits.maxSpeedBehind), sourceLimit.minSpeedAhead) * Config::minLaneChangeTime;
+            transition->targetS = vehicle->s + laneChangeDistance;
         }
-        
-        Limits &sourceLimit = laneLimits[transition->sourceLane];
-        laneChangeDistance += min(min(transition->limits.minSpeedAhead, transition->limits.maxSpeedBehind), 
-                                  sourceLimit.minSpeedAhead) * Config::minLaneChangeTime;
+        if (currentTransition != NULL) {
+            delete currentTransition;
+        }
         currentTransition = new StateTransition(*transition);
-        currentTransition->targetS = vehicle->s + laneChangeDistance;
         cout << "Pick transition " << transition->current << "  to " << transition->target << " from lane: " << transition->sourceLane
             << " to  lane: " << transition->immediateLane << " min speed ahead: " << transition->limits.minSpeedAhead << " max speed behind:" << transition->limits.maxSpeedBehind 
-            << " dist ahead: " << transition->limits.distanceAhead << " dist behind: " << transition->limits.distanceBehind << " vehicle ahead: " << transition->limits.nVehicleAhead
-            << " vehicle behind: " << transition->limits.nVehicleBehind << " lane change distance: " << laneChangeDistance << " Cost: " << minCost << endl;
+            << " dist ahead: " << transition->limits.distanceAhead << " dist behind: " << transition->limits.distanceBehind << " start S: " << transition->startS 
+            << " target S: " << transition->targetS << " vehicle ahead: " << transition->limits.nVehicleAhead << " vehicle behind: " << transition->limits.nVehicleBehind 
+            << " lane change distance: " << laneChangeDistance << " Cost: " << minCost << endl;
     }
 
-    return generateTrajectory(laneChangeDistance);
+    return generateTrajectory(currentTransition->targetS - currentTransition->startS);
 }
 
 void Navigator::getLaneStateTransitions(vector<StateTransition> &transitions, double t) {
@@ -193,21 +208,6 @@ void Navigator::getLaneStateTransitions(vector<StateTransition> &transitions, do
             transitions.push_back(*rollback);
             delete rollback;
         }
-        // if (vehicle->laneLeft == currentTransition->immediateLane && vehicle->laneLeft == vehicle->laneRight) { 
-        //     // we are on the target lane, check if we can change two lanes
-        //     if (currentTransition->target == NavigationState::LCL && currentTransition->immediateLane > 0) {
-        //         StateTransition transition = getStateTransitionToLane(currentTransition->immediateLane, currentTransition->immediateLane - 1);
-        //         transition.startS = vehicle->s;
-        //         transition.startD = vehicle->d;
-        //         transitions.push_back(transition);
-        //     }
-        //     if (currentTransition->target == NavigationState::LCR && currentTransition->immediateLane < Road::current().numberOfLanes() - 1) {
-        //         StateTransition transition = getStateTransitionToLane(currentTransition->immediateLane, currentTransition->immediateLane + 1);
-        //         transition.startS = vehicle->s;
-        //         transition.startD = vehicle->d;
-        //         transitions.push_back(transition);
-        //     }
-        // }
         transitions.push_back(*currentTransition);
     }
 }
@@ -348,7 +348,8 @@ std::function<double (double)> Navigator::getAcceleration(StateTransition &trans
     if (transition.target != NavigationState::KL && (vehicle->laneLeft == transition.sourceLane ||
         vehicle->laneRight == transition.sourceLane)) {
         minDist = Config::minLaneChangeFrontDistance;
-        if (laneLimits[transition.sourceLane].distanceAhead / minSpeedAhead < Config::minLaneChangeTime) {
+        double vDiff = laneLimits[transition.sourceLane].minSpeedAhead - minSpeedAhead;
+        if (Config::minLaneChangeTime * vDiff + laneLimits[transition.sourceLane].distanceAhead < minDist) {
             minSpeedAhead = min(minSpeedAhead, laneLimits[transition.sourceLane].minSpeedAhead);
             minDistAhead = min(minDistAhead, laneLimits[transition.sourceLane].distanceAhead);
         }

@@ -24,7 +24,7 @@ class Navigator {
 protected:
   Vehicle *vehicle = NULL;
   NavigationState state = NavigationState::KL;
-  StateTransition *currentTransition;
+  StateTransition *currentTransition = NULL;
   vector<Vehicle> vehicles;
   vector<Vehicle*> *laneFusion = NULL;
   Limits *laneLimits = NULL;

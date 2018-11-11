@@ -5,77 +5,65 @@ using namespace std;
 class SafetyCost: public Cost {
 public:
     SafetyCost() {};
-    double operator()(Vehicle &vehicle, StateTransition &transition) const {
-        double tf = (vehicle.v - transition.limits.minSpeedAhead) / (transition.limits.distanceAhead + EPSILON);
-        double tb = (transition.limits.maxSpeedBehind - vehicle.v) / (transition.limits.distanceBehind + EPSILON);
+    double operator()(const Vehicle &vehicle, const int lane, Limits &limits) const {
+        double tf = (vehicle.v - limits.minSpeedAhead) / (limits.distanceAhead + EPSILON);
+        double tb = (limits.maxSpeedBehind - vehicle.v) / (limits.distanceBehind + EPSILON);
         if (tf > 0.5 || tb > 0.5) { // less than 2 second to collision
             return 1;
         }
-        else if (transition.target != NavigationState::KL && (transition.limits.distanceAhead < Config::minLaneChangeFrontDistance 
-                    || -transition.limits.distanceBehind < Config::minLaneChangeBackDistance 
-                    || transition.previousLimits.distanceAhead < Config::minSafeDistance
-                    || -transition.previousLimits.distanceBehind < Config::minLaneChangeBackDistance)) {
+        else if (lane != vehicle.laneLeft && lane != vehicle.laneRight && (limits.distanceAhead < Config::minLaneChangeFrontDistance 
+                    || -limits.distanceBehind < Config::minLaneChangeBackDistance)) {
             return 1; // unsafe
         }
-        return  1.5 * (sigmoid(tf) - 0.5)+ 
-                0.5 * (sigmoid(tb) - 0.5);
+        return 1.5 * (sigmoid(tf) - 0.5) + 0.5 * (sigmoid(tb) - 0.5);
     }
 };
 
 class SpeedCost: public Cost {
 public:
     SpeedCost() {};
-    double operator()(Vehicle &vehicle, StateTransition &transition) const {
-        double diffFront = vehicle.v - transition.limits.minSpeedAhead;
-        double diffBack =  vehicle.v - transition.limits.maxSpeedBehind;
-        double dist = transition.limits.distanceBehind / 5; // 5 seconds to reach as the reference
+    double operator()(const Vehicle &vehicle, const int lane, Limits &limits) const {
+        double diffFront = vehicle.v - limits.minSpeedAhead;
+        double diffBack =  vehicle.v - limits.maxSpeedBehind;
+        double dist = limits.distanceBehind / 5; // 5 seconds to reach as the reference
         if (fabs(dist) < EPSILON) dist = dist < 0? -EPSILON: EPSILON;
         return 1.5 * (sigmoid(diffFront) - 0.5) + 0.5 * (sigmoid(diffBack/dist) - 0.5);
-    }
-};
-
-class OffTargetLaneCost: public Cost {
-public:
-    OffTargetLaneCost() {};
-    double operator()(Vehicle &vehicle, StateTransition &transition) const {
-        return 2 *(sigmoid(abs(transition.immediateLane - transition.targetLane)) - 0.5);
     }
 };
 
 class ChangeLaneCost: public Cost {
 public:
     ChangeLaneCost() {};
-    double operator()(Vehicle &vehicle, StateTransition &transition) const {
-        return 2 *(sigmoid(abs(transition.immediateLane - transition.sourceLane)) - 0.5);
+    double operator()(const Vehicle &vehicle, const int lane, Limits &limits) const {
+        return 2 *(sigmoid(abs(vehicle.laneRight + vehicle.laneLeft - 2 * lane) / 2) - 0.5);
     }
 };
 
 class LaneTrafficCost: public Cost {
 public:
     LaneTrafficCost() {};
-    double operator()(Vehicle &vehicle, StateTransition &transition) const {
-        return Config::laneFrontTrafficCostWeight * (sigmoid(transition.limits.nVehicleAhead) - 0.5) +
-                Config::laneRearTrafficCostWeight * (sigmoid(transition.limits.nVehicleBehind) - 0.5);
+    double operator()(const Vehicle &vehicle, const int lane, Limits &limits) const {
+        return Config::laneFrontTrafficCostWeight * (sigmoid(limits.nVehicleAhead) - 0.5) +
+                Config::laneRearTrafficCostWeight * (sigmoid(limits.nVehicleBehind) - 0.5);
     }
 };
 
 CostEvaluator::CostEvaluator() {
     addCost(new SafetyCost(), Config::safetyCostWeight);
     addCost(new SpeedCost(), Config::speedCostWeight);
-    addCost(new OffTargetLaneCost(), Config::offTargetLaneCostWeight);
     addCost(new ChangeLaneCost(), Config::changetLaneCostWeight);
     addCost(new LaneTrafficCost(), Config::laneTrafficCostWeight);
 }
 
-double CostEvaluator::operator()(Vehicle &vehicle, StateTransition &transition) const {
+double CostEvaluator::operator()(const Vehicle &vehicle, const int lane, Limits &limits) const {
     double cost = 0;
     double totalWeight = 0;
     if (evaluators.size() > 0) {
         for (unsigned i = 0; i < evaluators.size(); i++){
-            cost += weights[i] * (*evaluators[i])(vehicle, transition);
+            cost += weights[i] * (*evaluators[i])(vehicle, lane, limits);
             totalWeight += weights[i];
         }
-        return cost / totalWeight;
+        return limits.cost = cost / totalWeight;
     }
-    return -1;
+    return limits.cost = -1;
 }

@@ -4,10 +4,10 @@
 
 enum NavigationState {
     KL = 1,
-    LCL,
-    LCR,
     PLCL,
     PLCR,
+    LCL,
+    LCR,
     COLLIIDED
 };
 
@@ -16,6 +16,7 @@ struct Limits {
     double maxSpeedBehind = 0;
     double distanceAhead = 0;
     double distanceBehind = 0;
+    double cost = 0;
     int nVehicleAhead;
     int nVehicleBehind;
 
@@ -32,6 +33,7 @@ struct Limits {
         distanceBehind = another.distanceBehind;
         nVehicleAhead = another.nVehicleAhead;
         nVehicleBehind = another.nVehicleBehind;
+        cost = another.cost;
     }
 
     Limits& operator=(const Limits& another) {
@@ -41,6 +43,7 @@ struct Limits {
         distanceBehind = another.distanceBehind;
         nVehicleAhead = another.nVehicleAhead;
         nVehicleBehind = another.nVehicleBehind;
+        cost = another.cost;
     }
 };
 

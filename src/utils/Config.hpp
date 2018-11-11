@@ -39,7 +39,6 @@ public:
    * Maximal acceleration of vehicle, m
    */ 
   static double maxAcceleration;
-  static double maxAccelerationTime;
   static double maxJerk;
   static int targetLane;
   static double laneWidth;
@@ -48,13 +47,13 @@ public:
   static double minLaneChangeFrontDistance;
   static double minLaneChangeBackDistance;
   static double maxLaneChangeDistance;
-  static double minLaneChangeSpeedGain;
   static double safeDistance(const double relativeSpeed);
   static double safeLaneChangeFrontDistance(const double relativeSpeed);
   static double safeLaneChangeBackDistance(const double relativeSpeed);
   static double minLaneChangeTime;
   static double maxDistance;
   static double minSafeGap;
+  static double minLaneChangeCostGain;
 
   static double safetyCostWeight;
   static double speedCostWeight;
@@ -63,6 +62,7 @@ public:
   static double laneTrafficCostWeight;
   static double laneFrontTrafficCostWeight;
   static double laneRearTrafficCostWeight;
+  static double laneCostWeights[];
 
   /**
    * Maximal deceleration of vehicle

@@ -17,6 +17,9 @@ tk::spline Vehicle::changeTrajectory;
 void Vehicle::initialize() {
   changeTrajectory.set_points(changeTrajectoryX, changeTrajectoryY);
   initialized = true;
+  for (double s = 0; s <= 1; s += 0.01) {
+    cout << ",[" << s << "," << changeTrajectory(s) << "]" << endl;
+  }
 }
 
 Vehicle::Vehicle(const vector<double> &data, const double _width): id(int(data[0])), x(data[1]), y(data[2]),

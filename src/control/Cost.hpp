@@ -10,7 +10,7 @@ using namespace std;
 class Cost {
 public:
     Cost() {};
-    virtual double operator()(Vehicle &vehicle, StateTransition &transition) const = 0;
+    virtual double operator()(const Vehicle &vehicle, const int lane, Limits &limits) const = 0;
 };
 
 class CostEvaluator: public Cost {
@@ -18,7 +18,7 @@ class CostEvaluator: public Cost {
     vector<double> weights;
 public:
     CostEvaluator();
-    double operator()(Vehicle &vehicle, StateTransition &transition) const ;
+    double operator()(const Vehicle &vehicle, const int lane, Limits &limits) const ;
     void addCost(Cost* cost, double weight) {
         evaluators.push_back(cost);
         weights.push_back(weight);

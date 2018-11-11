@@ -14,6 +14,8 @@
 #include "model/Vehicle.hpp"
 #include "control/Navigator.hpp"
 
+static string configFile = "";
+
 // Don't use std namespace as it might cause g++ 7 to to use std::array for array in json.hpp, and fail
 // for convenience
 using json = nlohmann::json;
@@ -26,19 +28,16 @@ std::string hasData(std::string s)
   auto found_null = s.find("null");
   auto b1 = s.find_first_of("[");
   auto b2 = s.find_first_of("}");
-  if (found_null != std::string::npos)
-  {
+  if (found_null != std::string::npos) {
     return "";
   }
-  else if (b1 != std::string::npos && b2 != std::string::npos)
-  {
+  else if (b1 != std::string::npos && b2 != std::string::npos) {
     return s.substr(b1, b2 - b1 + 2);
   }
   return "";
 }
 
-int main()
-{
+int main(int argc, char *argv[]) {
   uWS::Hub h;
 
   // Load up map values for waypoint's x,y,s and d normalized normal std::vectors
@@ -53,11 +52,25 @@ int main()
   // The max s value before wrapping around the track back to 0
   double max_s = 6945.554;
 
+  
+  // Process command line options
+  for (int i = 1; i < argc; i++) {
+    if (std::string((argv[i])) == "-config") { // Set the number of particles
+      configFile = argv[++i];
+    } else if (std::string((argv[i])) == "-fast") { // set std GPS deviation
+      configFile = "../config-fast.json";
+    } else if (std::string((argv[i])) == "-safe") { // set std GPS deviation
+      configFile = "../config-safe.json";
+    } else {
+      std::cerr << "Unknown option: " << argv[i] << std::endl;
+      exit(-1);
+    }
+  }
+
   std::ifstream in_map_(map_file_.c_str(), std::ifstream::in);
 
   std::string line;
-  while (std::getline(in_map_, line))
-  {
+  while (std::getline(in_map_, line)) {
     std::istringstream iss(line);
     double x;
     double y;
@@ -87,9 +100,7 @@ int main()
         // The 2 signifies a websocket event
         //auto sdata = std::string(data).substr(0, length);
         //std::cout << sdata << endl;
-        if (length && length > 2 && data[0] == '4' && data[1] == '2')
-        {
-
+        if (length && length > 2 && data[0] == '4' && data[1] == '2') {
           auto s = hasData(data);
 
           if (s != "")
@@ -169,19 +180,20 @@ int main()
   h.onHttpRequest([](uWS::HttpResponse *res, uWS::HttpRequest req, char *data,
                      size_t, size_t) {
     const std::string s = "<h1>Hello world!</h1>";
-    if (req.getUrl().valueLength == 1)
-    {
+    if (req.getUrl().valueLength == 1) {
       res->end(s.data(), s.length());
     }
-    else
-    {
+    else {
       // i guess this should be done more gracefully?
       res->end(nullptr, 0);
     }
   });
 
   h.onConnection([&h](uWS::WebSocket<uWS::SERVER> ws, uWS::HttpRequest req) {
-    std::cout << "Connected!!!" << std::endl;
+    cout << "Connected!!!, loading config from: " << configFile << endl;
+    if (!configFile.empty()) {
+      Config::load(configFile);
+    }
   });
 
   h.onDisconnection([&h](uWS::WebSocket<uWS::SERVER> ws, int code,
@@ -191,12 +203,10 @@ int main()
   });
 
   int port = 4567;
-  if (h.listen(port))
-  {
+  if (h.listen(port)) {
     std::cout << "Listening to port " << port << std::endl;
   }
-  else
-  {
+  else {
     std::cerr << "Failed to listen to port" << std::endl;
     return -1;
   }
